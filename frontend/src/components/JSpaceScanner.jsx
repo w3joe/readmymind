@@ -1,3 +1,9 @@
+function formatMs(ms) {
+  if (ms == null || Number.isNaN(ms)) return "—"
+  if (ms < 1000) return `${Math.round(ms)} ms`
+  return `${(ms / 1000).toFixed(2)} s`
+}
+
 function scoreTone(score) {
   if (score > 0.7) return {
     chip: "bg-threat-soft text-threat",
@@ -13,13 +19,13 @@ function scoreTone(score) {
   }
 }
 
-export function JSpaceScanner({ layers, status, threatLayer }) {
+export function JSpaceScanner({ layers, status, threatLayer, jlensTiming }) {
   const isScanning = status === "scanning"
   const hasThreat = layers.some((l) => l.threat_score > 0.55)
 
   return (
     <div className="border border-paper-line bg-paper-raised/80 px-4 py-5 backdrop-blur-sm sm:px-5">
-      <div className="mb-5 flex items-center gap-3">
+      <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-2">
         <span
           className={`
             h-2 w-2 shrink-0
@@ -38,6 +44,21 @@ export function JSpaceScanner({ layers, status, threatLayer }) {
               ? "Threat concepts present"
               : "Clean readout"}
         </span>
+        {jlensTiming?.elapsed_ms != null && !isScanning && (
+          <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-mute">
+            observe {formatMs(jlensTiming.elapsed_ms)}
+            {jlensTiming.lens_ms != null && (
+              <span className="opacity-70">
+                {" "}· lens {formatMs(jlensTiming.lens_ms)}
+              </span>
+            )}
+            {jlensTiming.layers_read != null && (
+              <span className="opacity-70">
+                {" "}· {jlensTiming.layers_read} layers
+              </span>
+            )}
+          </span>
+        )}
       </div>
 
       <div className="space-y-3">
