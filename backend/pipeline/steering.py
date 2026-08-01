@@ -1,5 +1,6 @@
 import os
 import math
+import time
 import torch
 
 from pipeline.chat import format_user_prompt
@@ -73,10 +74,19 @@ def make_steering_hook(steering_vector: torch.Tensor, alpha: float = 15.0):
     return hook
 
 
-def generate_normal(model, tokenizer, prompt: str, max_new_tokens: int = 120) -> str:
+def _sync_cuda():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def _run_generate(model, tokenizer, text: str, max_new_tokens: int, mode: str) -> dict:
+    """Generate and return text + wall-clock / token metrics."""
     device = next(model.parameters()).device
-    text = format_user_prompt(tokenizer, prompt)
     inputs = tokenizer(text, return_tensors="pt").to(device)
+    prompt_tokens = int(inputs["input_ids"].shape[1])
+
+    _sync_cuda()
+    t0 = time.perf_counter()
     with torch.no_grad():
         output = model.generate(
             **inputs,
@@ -84,8 +94,30 @@ def generate_normal(model, tokenizer, prompt: str, max_new_tokens: int = 120) ->
             do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
         )
-    new_tokens = output[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True)
+    _sync_cuda()
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+    new_tokens = output[0][prompt_tokens:]
+    completion_tokens = int(new_tokens.shape[0])
+    text_out = tokenizer.decode(new_tokens, skip_special_tokens=True)
+    tokens_per_sec = (
+        completion_tokens / (elapsed_ms / 1000.0) if elapsed_ms > 0 else 0.0
+    )
+
+    return {
+        "text": text_out,
+        "mode": mode,
+        "elapsed_ms": round(elapsed_ms, 1),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+        "tokens_per_sec": round(tokens_per_sec, 2),
+    }
+
+
+def generate_normal(model, tokenizer, prompt: str, max_new_tokens: int = 120) -> dict:
+    text = format_user_prompt(tokenizer, prompt)
+    return _run_generate(model, tokenizer, text, max_new_tokens, mode="unsteered")
 
 
 def generate_steered(
@@ -96,7 +128,7 @@ def generate_steered(
     alpha: float = 35.0,
     max_new_tokens: int = 120,
     apply_layers: list[int] | None = None,
-) -> str:
+) -> dict:
     """Restore refusal via Arditi direction + light refuse system bias.
 
     Vectors were fit on aligned Qwen3-8B (harmful − harmless). Applied here
@@ -111,9 +143,7 @@ def generate_steered(
     if alpha <= 0:
         return generate_normal(model, tokenizer, prompt, max_new_tokens)
 
-    device = next(model.parameters()).device
     text = format_user_prompt(tokenizer, prompt, refuse_bias=True)
-    inputs = tokenizer(text, return_tensors="pt").to(device)
     layers = model.model.layers
 
     n = max(len(apply_layers), 1)
@@ -139,29 +169,14 @@ def generate_steered(
             )
         )
 
-    if not handles:
-        print("No steering hooks registered; generating with refuse bias only")
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        new_tokens = output[0][inputs["input_ids"].shape[1]:]
-        return tokenizer.decode(new_tokens, skip_special_tokens=True)
-
     try:
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
+        result = _run_generate(
+            model, tokenizer, text, max_new_tokens, mode="steered"
+        )
     finally:
         for h in handles:
             h.remove()
 
-    new_tokens = output[0][inputs["input_ids"].shape[1]:]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True)
+    result["steer_layers"] = apply_layers
+    result["alpha"] = float(alpha)
+    return result

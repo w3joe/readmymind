@@ -113,12 +113,37 @@ async def analyse(request: PromptRequest):
                     yield f"data: {json.dumps({'type': 'error', 'message': f'Steering failed: {exc}'})}\n\n"
                     steered = None
 
+            benchmark = {
+                "unsteered": {
+                    "elapsed_ms": original.get("elapsed_ms"),
+                    "prompt_tokens": original.get("prompt_tokens"),
+                    "completion_tokens": original.get("completion_tokens"),
+                    "total_tokens": original.get("total_tokens"),
+                    "tokens_per_sec": original.get("tokens_per_sec"),
+                },
+            }
+            if steered:
+                benchmark["steered"] = {
+                    "elapsed_ms": steered.get("elapsed_ms"),
+                    "prompt_tokens": steered.get("prompt_tokens"),
+                    "completion_tokens": steered.get("completion_tokens"),
+                    "total_tokens": steered.get("total_tokens"),
+                    "tokens_per_sec": steered.get("tokens_per_sec"),
+                    "steer_layers": steered.get("steer_layers"),
+                }
+                u_ms = benchmark["unsteered"]["elapsed_ms"] or 0
+                s_ms = benchmark["steered"]["elapsed_ms"] or 0
+                if u_ms > 0:
+                    benchmark["delta_ms"] = round(s_ms - u_ms, 1)
+                    benchmark["overhead_pct"] = round((s_ms / u_ms - 1.0) * 100.0, 1)
+
             output_event = {
                 "type": "outputs",
-                "original": original,
-                "steered": steered,
+                "original": original.get("text", original) if isinstance(original, dict) else original,
+                "steered": steered.get("text") if isinstance(steered, dict) else steered,
                 "alpha": request.alpha,
                 "threat_layer": threat_layer,
+                "benchmark": benchmark,
             }
             yield f"data: {json.dumps(output_event)}\n\n"
         except Exception as exc:
@@ -133,7 +158,7 @@ async def health():
     from pipeline.cache import cache_fingerprint
     return {
         "status": "ok",
-        "version": "refusal-arditi-v5",
+        "version": "bench-metrics-v1",
         "cache": cache_fingerprint(),
     }
 

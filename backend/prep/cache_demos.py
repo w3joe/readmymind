@@ -74,17 +74,57 @@ def main():
             generate_steered(model, tokenizer, prompt, threat_layer)
             if threat_detected else None
         )
+        orig_text = original["text"] if isinstance(original, dict) else original
+        steer_text = (
+            steered["text"] if isinstance(steered, dict) else steered
+        )
+        bench = {
+            "unsteered": {
+                k: original.get(k)
+                for k in (
+                    "elapsed_ms",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                    "tokens_per_sec",
+                )
+            }
+            if isinstance(original, dict)
+            else None,
+        }
+        if isinstance(steered, dict):
+            bench["steered"] = {
+                k: steered.get(k)
+                for k in (
+                    "elapsed_ms",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                    "tokens_per_sec",
+                )
+            }
         events.append({
             "type": "outputs",
-            "original": original,
-            "steered": steered,
+            "original": orig_text,
+            "steered": steer_text,
+            "benchmark": bench,
         })
 
         cache[prompt.strip()] = {"events": events}
         print(f"  threat_detected={threat_detected}, threat_layer={threat_layer}")
-        print(f"  original: {original[:80]}...")
-        if steered:
-            print(f"  steered:  {steered[:80]}...")
+        print(f"  original: {orig_text[:80]}...")
+        if steer_text:
+            print(f"  steered:  {steer_text[:80]}...")
+        if isinstance(original, dict):
+            print(
+                f"  unsteered: {original.get('elapsed_ms')} ms, "
+                f"{original.get('completion_tokens')} tok"
+            )
+        if isinstance(steered, dict):
+            print(
+                f"  steered:   {steered.get('elapsed_ms')} ms, "
+                f"{steered.get('completion_tokens')} tok"
+            )
 
     with open(CACHE_PATH, "w") as f:
         json.dump(cache, f, indent=2)
