@@ -45,6 +45,7 @@ web_app.add_middleware(
 class PromptRequest(BaseModel):
     prompt: str
     alpha: float = 55.0
+    interpretability: bool = True
 
 
 class BenchmarkRequest(BaseModel):
@@ -75,39 +76,48 @@ async def analyse(request: PromptRequest):
 
             model, tokenizer, jlens_model, lens = get_model_and_lens()
 
-            from pipeline.jlens import observe_jlens
+            threat_detected = False
+            threat_layer = None
+            jlens_timing = {"elapsed_ms": 0}
 
-            jspace_results, jlens_timing = await asyncio.to_thread(
-                observe_jlens, jlens_model, tokenizer, lens, request.prompt
-            )
-            for layer_result in jspace_results:
-                event = {
-                    "type": "layer",
-                    "layer": layer_result["layer"],
-                    "concepts": layer_result["concepts"],
-                    "threat_score": layer_result["threat_score"],
+            if request.interpretability:
+                from pipeline.jlens import observe_jlens
+
+                jspace_results, jlens_timing = await asyncio.to_thread(
+                    observe_jlens, jlens_model, tokenizer, lens, request.prompt
+                )
+                for layer_result in jspace_results:
+                    event = {
+                        "type": "layer",
+                        "layer": layer_result["layer"],
+                        "concepts": layer_result["concepts"],
+                        "threat_score": layer_result["threat_score"],
+                    }
+                    yield f"data: {json.dumps(event)}\n\n"
+                    await asyncio.sleep(0.05)
+
+                threat_detected, threat_layer = detect_threat(
+                    jspace_results, prompt=request.prompt
+                )
+                detection_event = {
+                    "type": "detection",
+                    "threat_detected": threat_detected,
+                    "threat_layer": threat_layer,
+                    "alpha": request.alpha,
+                    "jlens": jlens_timing,
                 }
-                yield f"data: {json.dumps(event)}\n\n"
-                await asyncio.sleep(0.05)
-
-            threat_detected, threat_layer = detect_threat(
-                jspace_results, prompt=request.prompt
-            )
-            detection_event = {
-                "type": "detection",
-                "threat_detected": threat_detected,
-                "threat_layer": threat_layer,
-                "alpha": request.alpha,
-                "jlens": jlens_timing,
-            }
-            yield f"data: {json.dumps(detection_event)}\n\n"
+                yield f"data: {json.dumps(detection_event)}\n\n"
 
             # Heavy GPU work off the event loop so the SSE connection stays healthy.
             original = await asyncio.to_thread(
                 generate_normal, model, tokenizer, request.prompt
             )
             steered = None
-            if threat_detected and threat_layer is not None:
+            if (
+                request.interpretability
+                and threat_detected
+                and threat_layer is not None
+            ):
                 try:
                     steered = await asyncio.to_thread(
                         generate_steered,
@@ -129,6 +139,7 @@ async def analyse(request: PromptRequest):
 
             benchmark = {
                 "jlens": jlens_timing,
+                "interpretability": request.interpretability,
                 "unsteered": {
                     "elapsed_ms": original.get("elapsed_ms"),
                     "prompt_tokens": original.get("prompt_tokens"),
@@ -153,7 +164,7 @@ async def analyse(request: PromptRequest):
                     benchmark["overhead_pct"] = round((s_ms / u_ms - 1.0) * 100.0, 1)
 
             # Observe vs generate: how much Catch costs on top of plain generation
-            if gen_ms > 0:
+            if request.interpretability and gen_ms > 0:
                 benchmark["jlens_overhead_pct_vs_gen"] = round(
                     (observe_ms / gen_ms) * 100.0, 1
                 )
@@ -165,6 +176,7 @@ async def analyse(request: PromptRequest):
                 "steered": steered.get("text") if isinstance(steered, dict) else steered,
                 "alpha": request.alpha,
                 "threat_layer": threat_layer,
+                "interpretability": request.interpretability,
                 "benchmark": benchmark,
             }
             yield f"data: {json.dumps(output_event)}\n\n"
@@ -233,6 +245,21 @@ async def health():
         "status": "ok",
         "version": "benchmark-v1",
         "cache": cache_fingerprint(),
+    }
+
+
+@web_app.post("/warmup")
+async def warmup():
+    """Load model + lens into GPU memory so the first real request is hot."""
+    from pipeline.model import get_model_and_lens
+    import torch
+
+    await asyncio.to_thread(get_model_and_lens)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return {
+        "status": "warm",
+        "device": device,
+        "cuda": torch.cuda.is_available(),
     }
 
 

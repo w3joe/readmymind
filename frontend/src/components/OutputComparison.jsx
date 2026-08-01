@@ -39,75 +39,86 @@ function MetricsRow({ metrics, accent = false }) {
   )
 }
 
-export function OutputComparison({ outputs, detection }) {
+export function OutputComparison({ outputs, detection, interpretability = true }) {
   if (!outputs) return null
 
   const { original, steered, benchmark } = outputs
-  const threatDetected = detection?.threat_detected
+  const showSteer = interpretability && detection?.threat_detected && Boolean(steered)
   const unsteeredMetrics = benchmark?.unsteered
   const steeredMetrics = benchmark?.steered
-  const jlens = benchmark?.jlens
+  const jlens = interpretability ? benchmark?.jlens : null
 
   return (
     <div className="space-y-4 animate-fade-up">
-      <div className="space-y-1 font-mono text-[11px] tabular-nums text-ink-mute">
-        {jlens?.elapsed_ms != null && (
-          <p>
-            J-Lens observe{" "}
-            <span className="text-ink">{formatMs(jlens.elapsed_ms)}</span>
-            {jlens.lens_ms != null && (
-              <span>
-                {" "}
-                (lens {formatMs(jlens.lens_ms)}
-                {jlens.decode_ms != null
-                  ? ` · decode ${formatMs(jlens.decode_ms)}`
-                  : ""}
-                )
+      {interpretability && (
+        <div className="space-y-1 font-mono text-[11px] tabular-nums text-ink-mute">
+          {jlens?.elapsed_ms != null && (
+            <p>
+              J-Lens observe{" "}
+              <span className="text-ink">{formatMs(jlens.elapsed_ms)}</span>
+              {jlens.lens_ms != null && (
+                <span>
+                  {" "}
+                  (lens {formatMs(jlens.lens_ms)}
+                  {jlens.decode_ms != null
+                    ? ` · decode ${formatMs(jlens.decode_ms)}`
+                    : ""}
+                  )
+                </span>
+              )}
+              {benchmark.jlens_overhead_pct_vs_gen != null && (
+                <span>
+                  {" "}
+                  · {benchmark.jlens_overhead_pct_vs_gen}% of generation time
+                </span>
+              )}
+            </p>
+          )}
+          {showSteer && benchmark?.delta_ms != null && (
+            <p>
+              Steering overhead{" "}
+              <span className="text-ink">
+                {benchmark.delta_ms >= 0 ? "+" : "−"}
+                {formatMs(Math.abs(benchmark.delta_ms))}
               </span>
-            )}
-            {benchmark.jlens_overhead_pct_vs_gen != null && (
-              <span>
-                {" "}
-                · {benchmark.jlens_overhead_pct_vs_gen}% of generation time
-              </span>
-            )}
-          </p>
-        )}
-        {threatDetected && benchmark?.delta_ms != null && (
+              {benchmark.overhead_pct != null && (
+                <span>
+                  {" "}
+                  ({benchmark.overhead_pct >= 0 ? "+" : ""}
+                  {benchmark.overhead_pct}% vs unsteered)
+                </span>
+              )}
+            </p>
+          )}
+          {benchmark?.pipeline_ms != null && (
+            <p>
+              Pipeline total{" "}
+              <span className="text-ink">{formatMs(benchmark.pipeline_ms)}</span>
+              {" "}
+              {interpretability ? "(observe + generate)" : "(generate)"}
+            </p>
+          )}
+        </div>
+      )}
+
+      {!interpretability && benchmark?.unsteered && (
+        <div className="space-y-1 font-mono text-[11px] tabular-nums text-ink-mute">
           <p>
-            Steering overhead{" "}
-            <span className="text-ink">
-              {benchmark.delta_ms >= 0 ? "+" : "−"}
-              {formatMs(Math.abs(benchmark.delta_ms))}
-            </span>
-            {benchmark.overhead_pct != null && (
-              <span>
-                {" "}
-                ({benchmark.overhead_pct >= 0 ? "+" : ""}
-                {benchmark.overhead_pct}% vs unsteered)
-              </span>
-            )}
+            Generation{" "}
+            <span className="text-ink">{formatMs(benchmark.unsteered.elapsed_ms)}</span>
           </p>
-        )}
-        {benchmark?.pipeline_ms != null && (
-          <p>
-            Pipeline total{" "}
-            <span className="text-ink">{formatMs(benchmark.pipeline_ms)}</span>
-            {" "}
-            (observe + generate)
-          </p>
-        )}
-      </div>
+        </div>
+      )}
 
       <div
         className={`
           grid gap-6
-          ${threatDetected ? "md:grid-cols-2" : "grid-cols-1"}
+          ${showSteer ? "md:grid-cols-2" : "grid-cols-1"}
         `}
       >
         <div>
           <p className="mb-2 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
-            {threatDetected ? "Without steering" : "Model output"}
+            {showSteer ? "Without steering" : "Model output"}
           </p>
           <p className="border-t border-paper-line pt-3 font-sans text-[15px] leading-relaxed text-ink-soft whitespace-pre-wrap">
             {original}
@@ -115,7 +126,7 @@ export function OutputComparison({ outputs, detection }) {
           <MetricsRow metrics={unsteeredMetrics} />
         </div>
 
-        {threatDetected && steered && (
+        {showSteer && (
           <div>
             <p className="mb-2 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-signal">
               With steering

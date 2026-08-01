@@ -5,13 +5,30 @@ import { JSpaceScanner } from "./components/JSpaceScanner"
 import { ThreatAlert } from "./components/ThreatAlert"
 import { OutputComparison } from "./components/OutputComparison"
 import { SteeringTuner } from "./components/SteeringTuner"
+import { InterpretabilityToggle } from "./components/InterpretabilityToggle"
 
 export default function App() {
   const {
-    layers, detection, outputs, status, error, alpha, setAlpha, analyse,
+    layers,
+    detection,
+    outputs,
+    status,
+    error,
+    alpha,
+    setAlpha,
+    interpretability,
+    setInterpretability,
+    analyse,
+    reset,
   } = useSSEStream()
   const isRunning = status === "scanning"
   const showResults = layers.length > 0 || isRunning || detection || outputs
+
+  function handleInterpretabilityChange(enabled) {
+    setInterpretability(enabled)
+    // Drop prior Catch & Steer results so off doesn't keep showing scan/steer UI.
+    reset()
+  }
 
   return (
     <div className="atmosphere relative min-h-screen">
@@ -46,11 +63,22 @@ export default function App() {
           </p>
         </header>
 
-        <div className="mb-6">
-          <SteeringTuner alpha={alpha} onChange={setAlpha} disabled={isRunning} />
+        <div className="mb-6 space-y-3">
+          <InterpretabilityToggle
+            enabled={interpretability}
+            onChange={handleInterpretabilityChange}
+            disabled={isRunning}
+          />
+          {interpretability && (
+            <SteeringTuner alpha={alpha} onChange={setAlpha} disabled={isRunning} />
+          )}
         </div>
 
-        <PromptInput onSubmit={(prompt) => analyse(prompt, alpha)} disabled={isRunning} />
+        <PromptInput
+          onSubmit={(prompt) => analyse(prompt)}
+          disabled={isRunning}
+          interpretability={interpretability}
+        />
 
         {error && (
           <p className="mt-4 rounded-md border border-threat/30 bg-threat-soft px-3 py-2 font-sans text-sm text-threat">
@@ -60,7 +88,11 @@ export default function App() {
 
         {showResults && (
           <div className="mt-12 space-y-8">
-            {(layers.length > 0 || isRunning) && (
+            {!interpretability && isRunning && !outputs && (
+              <p className="font-sans text-sm text-ink-mute">Generating…</p>
+            )}
+
+            {interpretability && (layers.length > 0 || isRunning) && (
               <section>
                 <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
                   Layer readout
@@ -74,19 +106,23 @@ export default function App() {
               </section>
             )}
 
-            {detection && <ThreatAlert detection={detection} />}
+            {interpretability && detection && <ThreatAlert detection={detection} />}
 
             {outputs && (
               <section>
                 <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
                   Generation
-                  {detection?.threat_detected && (
+                  {interpretability && detection?.threat_detected && (
                     <span className="ml-2 normal-case tracking-normal text-ink-mute">
                       · steered at α={outputs.alpha ?? alpha}
                     </span>
                   )}
                 </h2>
-                <OutputComparison outputs={outputs} detection={detection} />
+                <OutputComparison
+                  outputs={outputs}
+                  detection={interpretability ? detection : null}
+                  interpretability={interpretability && outputs.interpretability !== false}
+                />
               </section>
             )}
           </div>

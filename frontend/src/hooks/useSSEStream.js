@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ""
 
@@ -9,6 +9,21 @@ export function useSSEStream() {
   const [status, setStatus] = useState("idle") // idle | scanning | threat | safe | complete
   const [error, setError] = useState(null)
   const [alpha, setAlpha] = useState(55)
+  const [interpretability, setInterpretabilityState] = useState(true)
+  const interpretabilityRef = useRef(true)
+  const alphaRef = useRef(55)
+
+  const setInterpretability = useCallback((next) => {
+    const value = typeof next === "function" ? next(interpretabilityRef.current) : next
+    interpretabilityRef.current = value
+    setInterpretabilityState(value)
+  }, [])
+
+  const setAlphaSafe = useCallback((next) => {
+    const value = typeof next === "function" ? next(alphaRef.current) : next
+    alphaRef.current = value
+    setAlpha(value)
+  }, [])
 
   const reset = useCallback(() => {
     setLayers([])
@@ -18,16 +33,26 @@ export function useSSEStream() {
     setError(null)
   }, [])
 
-  const analyse = useCallback(async (prompt, alphaOverride) => {
+  const analyse = useCallback(async (prompt, options = {}) => {
     reset()
     setStatus("scanning")
-    const strength = typeof alphaOverride === "number" ? alphaOverride : alpha
+    const strength =
+      typeof options.alpha === "number" ? options.alpha : alphaRef.current
+    // Always read the live toggle — don't trust a possibly-stale closure.
+    const useInterpretability =
+      typeof options.interpretability === "boolean"
+        ? options.interpretability
+        : interpretabilityRef.current
 
     try {
       const response = await fetch(`${BACKEND_URL}/analyse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, alpha: strength }),
+        body: JSON.stringify({
+          prompt,
+          alpha: strength,
+          interpretability: useInterpretability,
+        }),
       })
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -56,6 +81,11 @@ export function useSSEStream() {
             continue
           }
 
+          // Ignore Catch & Steer events if this request disabled interpretability.
+          if (!useInterpretability && (data.type === "layer" || data.type === "detection")) {
+            continue
+          }
+
           if (data.type === "layer") {
             setLayers((prev) => [...prev, data])
           }
@@ -66,7 +96,22 @@ export function useSSEStream() {
           }
 
           if (data.type === "outputs") {
-            setOutputs(data)
+            if (!useInterpretability) {
+              setOutputs({
+                ...data,
+                steered: null,
+                threat_layer: null,
+                interpretability: false,
+                benchmark: {
+                  ...(data.benchmark || {}),
+                  interpretability: false,
+                  steered: undefined,
+                  jlens: { elapsed_ms: 0 },
+                },
+              })
+            } else {
+              setOutputs(data)
+            }
             setStatus("complete")
           }
 
@@ -80,7 +125,19 @@ export function useSSEStream() {
       setError(err.message || "Stream failed")
       setStatus("idle")
     }
-  }, [reset, alpha])
+  }, [reset])
 
-  return { layers, detection, outputs, status, error, alpha, setAlpha, analyse, reset }
+  return {
+    layers,
+    detection,
+    outputs,
+    status,
+    error,
+    alpha,
+    setAlpha: setAlphaSafe,
+    interpretability,
+    setInterpretability,
+    analyse,
+    reset,
+  }
 }

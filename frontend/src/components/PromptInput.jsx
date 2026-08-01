@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { DEMO_PROMPTS } from "../constants/demoprompts"
 
-export function PromptInput({ onSubmit, disabled }) {
+export function PromptInput({ onSubmit, disabled, interpretability = true }) {
   const [value, setValue] = useState("")
 
   const harmful = DEMO_PROMPTS.filter((d) => d.expectedThreat)
@@ -22,7 +22,7 @@ export function PromptInput({ onSubmit, disabled }) {
       <div className="space-y-4">
         <div>
           <p className="mb-2.5 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-threat">
-            Harmful examples · live pipeline
+            Harmful examples · {interpretability ? "live pipeline" : "plain generate"}
           </p>
           <div className="flex flex-wrap gap-2">
             {harmful.map((d) => (
@@ -47,7 +47,7 @@ export function PromptInput({ onSubmit, disabled }) {
 
         <div>
           <p className="mb-2.5 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-signal">
-            Safe examples · live pipeline
+            Safe examples · {interpretability ? "live pipeline" : "plain generate"}
           </p>
           <div className="flex flex-wrap gap-2">
             {safe.map((d) => (
@@ -102,12 +102,20 @@ export function PromptInput({ onSubmit, disabled }) {
             disabled:cursor-not-allowed disabled:opacity-35
           "
         >
-          {disabled ? "Scanning…" : "Analyse"}
+          {disabled
+            ? interpretability
+              ? "Scanning…"
+              : "Generating…"
+            : interpretability
+              ? "Analyse"
+              : "Generate"}
         </button>
       </div>
 
       <p className="font-sans text-xs text-ink-mute">
-        Examples run live on Modal (J-Lens scan → detect → generate ± steer). First request may cold-start the GPU.
+        {interpretability
+          ? "Examples run live on Modal (J-Lens scan → detect → generate ± steer). First request may cold-start the GPU."
+          : "Interpretability off — Modal generates without J-Lens scan or steering. First request may cold-start the GPU."}
       </p>
     </div>
   )
