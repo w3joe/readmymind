@@ -68,10 +68,27 @@ def run_benchmark(alpha: float = 55.0, limit: int = 5) -> dict:
 
 @app.local_entrypoint()
 def main(alpha: float = 55.0, limit: int = 5):
+    from datetime import datetime, timezone
+
     payload = run_benchmark.remote(alpha=alpha, limit=limit)
     out_dir = ROOT / "assets" / "benchmark_results"
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "latest.json"
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    payload = {
+        **payload,
+        "id": f"run_{stamp}",
+        "savedAt": datetime.now(timezone.utc).isoformat(),
+        "source": "cli",
+        "limit": limit if limit > 0 else None,
+    }
+
+    latest = out_dir / "latest.json"
+    stamped = out_dir / f"run_{stamp}.json"
+    text = json.dumps(payload, indent=2) + "\n"
+    latest.write_text(text)
+    stamped.write_text(text)
+
     print(json.dumps(payload["scorecard"], indent=2))
-    print(f"\nWrote {path}")
+    print(f"\nWrote {latest}")
+    print(f"Wrote {stamped}")

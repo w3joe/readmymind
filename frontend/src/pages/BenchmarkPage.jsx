@@ -8,6 +8,15 @@ const CATEGORY_OPTIONS = [
   { id: "safe", label: "Safe" },
 ]
 
+function formatSavedAt(iso) {
+  if (!iso) return "—"
+  try {
+    return new Date(iso).toLocaleString()
+  } catch {
+    return iso
+  }
+}
+
 export default function BenchmarkPage() {
   const {
     status,
@@ -22,6 +31,11 @@ export default function BenchmarkPage() {
     categories,
     setCategories,
     run,
+    savedRuns,
+    activeRunId,
+    loadSaved,
+    removeSaved,
+    downloadActive,
   } = useBenchmarkStream()
 
   const running = status === "running"
@@ -52,8 +66,8 @@ export default function BenchmarkPage() {
           </h1>
           <div className="brand-rule mt-4 h-[2px] w-28 bg-signal" />
           <p className="mt-4 max-w-lg font-sans text-base leading-relaxed text-ink-soft">
-            Run the curated suite against the live Modal stack. Scores Catch detection,
-            Steer refusal rate, and J-Lens observe overhead.
+            Run the curated suite against the live Modal stack. Completed runs are
+            saved in this browser and can be downloaded as JSON.
           </p>
         </header>
 
@@ -95,6 +109,16 @@ export default function BenchmarkPage() {
             >
               {running ? "Running…" : "Run suite"}
             </button>
+            {scorecard && (
+              <button
+                type="button"
+                disabled={running}
+                onClick={downloadActive}
+                className="border border-paper-line px-4 py-2 font-sans text-sm text-ink disabled:opacity-40"
+              >
+                Download JSON
+              </button>
+            )}
           </div>
 
           <div>
@@ -103,7 +127,6 @@ export default function BenchmarkPage() {
             </p>
             <div className="flex flex-wrap gap-2">
               {CATEGORY_OPTIONS.map((opt) => {
-                const on = categories.includes(opt.id) || categories.length === 0
                 const selected = categories.includes(opt.id)
                 return (
                   <button
@@ -119,7 +142,6 @@ export default function BenchmarkPage() {
                           ? "border-paper-line text-ink-soft"
                           : "border-paper-line text-ink-mute opacity-60"
                       }
-                      ${!on && categories.length ? "opacity-50" : ""}
                     `}
                   >
                     {opt.label}
@@ -135,9 +157,67 @@ export default function BenchmarkPage() {
           {(running || progress.n > 0) && (
             <p className="font-mono text-[12px] tabular-nums text-ink-mute">
               Progress {progress.index} / {progress.n || "…"}
+              {activeRunId && !running && (
+                <span className="ml-2 opacity-70">· saved {activeRunId}</span>
+              )}
             </p>
           )}
         </section>
+
+        {savedRuns.length > 0 && (
+          <section className="mb-10">
+            <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
+              Saved locally
+            </h2>
+            <ul className="divide-y divide-paper-line border border-paper-line">
+              {savedRuns.map((runItem) => (
+                <li
+                  key={runItem.id}
+                  className={`
+                    flex flex-wrap items-center justify-between gap-3 px-3 py-2.5
+                    ${activeRunId === runItem.id ? "bg-paper-raised" : ""}
+                  `}
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-[12px] text-ink truncate">{runItem.id}</p>
+                    <p className="font-sans text-[11px] text-ink-mute">
+                      {formatSavedAt(runItem.savedAt)}
+                      {" · "}
+                      n={runItem.n ?? runItem.results?.length ?? "—"}
+                      {" · "}
+                      α={runItem.alpha ?? "—"}
+                      {runItem.scorecard?.catch?.f1 != null && (
+                        <> · F1={runItem.scorecard.catch.f1}</>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={running}
+                      onClick={() => loadSaved(runItem.id)}
+                      className="border border-paper-line px-2.5 py-1 font-sans text-xs text-ink"
+                    >
+                      Load
+                    </button>
+                    <button
+                      type="button"
+                      disabled={running}
+                      onClick={() => removeSaved(runItem.id)}
+                      className="border border-paper-line px-2.5 py-1 font-sans text-xs text-threat"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 font-sans text-[11px] text-ink-mute">
+              Stored in browser localStorage (up to 30 runs). CLI writes files under{" "}
+              <span className="font-mono">backend/assets/benchmark_results/</span>.
+            </p>
+          </section>
+        )}
 
         {error && (
           <p className="mb-6 rounded-md border border-threat/30 bg-threat-soft px-3 py-2 font-sans text-sm text-threat">

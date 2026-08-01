@@ -187,7 +187,7 @@ async def benchmark(request: BenchmarkRequest):
 
             if not cases:
                 scorecard = aggregate([])
-                yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'results': []})}\n\n"
+                yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'results': [], 'n': 0})}\n\n"
                 return
 
             model, tokenizer, jlens_model, lens = get_model_and_lens()
@@ -218,7 +218,7 @@ async def benchmark(request: BenchmarkRequest):
                 yield f"data: {json.dumps({'type': 'case_result', 'index': i, 'result': row})}\n\n"
 
             scorecard = aggregate([r for r in results if "error" not in r])
-            yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'n': len(results)})}\n\n"
+            yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'results': results, 'n': len(results), 'alpha': request.alpha})}\n\n"
         except Exception as exc:
             print(f"Benchmark stream failed: {exc}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"

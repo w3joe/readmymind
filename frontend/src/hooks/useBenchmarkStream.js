@@ -1,4 +1,11 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
+import {
+  deleteBenchmarkRun,
+  downloadBenchmarkRun,
+  listBenchmarkRuns,
+  loadBenchmarkRun,
+  saveBenchmarkRun,
+} from "../lib/benchmarkStore"
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ""
 
@@ -11,6 +18,16 @@ export function useBenchmarkStream() {
   const [alpha, setAlpha] = useState(55)
   const [limit, setLimit] = useState(5)
   const [categories, setCategories] = useState([])
+  const [savedRuns, setSavedRuns] = useState([])
+  const [activeRunId, setActiveRunId] = useState(null)
+
+  const refreshSaved = useCallback(() => {
+    setSavedRuns(listBenchmarkRuns())
+  }, [])
+
+  useEffect(() => {
+    refreshSaved()
+  }, [refreshSaved])
 
   const reset = useCallback(() => {
     setStatus("idle")
@@ -18,7 +35,18 @@ export function useBenchmarkStream() {
     setResults([])
     setScorecard(null)
     setError(null)
+    setActiveRunId(null)
   }, [])
+
+  const persistRun = useCallback(
+    (payload) => {
+      const entry = saveBenchmarkRun(payload)
+      refreshSaved()
+      if (entry) setActiveRunId(entry.id)
+      return entry
+    },
+    [refreshSaved]
+  )
 
   const run = useCallback(async () => {
     reset()
@@ -29,6 +57,8 @@ export function useBenchmarkStream() {
       limit: limit > 0 ? limit : null,
     }
     if (categories.length > 0) body.categories = categories
+
+    const collected = []
 
     try {
       const response = await fetch(`${BACKEND_URL}/api/benchmark`, {
@@ -41,6 +71,7 @@ export function useBenchmarkStream() {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ""
+      let finalScorecard = null
 
       while (true) {
         const { done, value } = await reader.read()
@@ -69,11 +100,26 @@ export function useBenchmarkStream() {
             setProgress((p) => ({ ...p, index: (data.index ?? 0) + 1 }))
           }
           if (data.type === "case_result") {
-            setResults((prev) => [...prev, data.result])
+            collected.push(data.result)
+            setResults([...collected])
           }
           if (data.type === "suite_done") {
-            setScorecard(data.scorecard)
+            finalScorecard = data.scorecard
+            const finalResults = Array.isArray(data.results) && data.results.length
+              ? data.results
+              : collected
+            setResults(finalResults)
+            setScorecard(finalScorecard)
             setStatus("complete")
+            persistRun({
+              alpha,
+              limit: limit > 0 ? limit : null,
+              categories: categories.length ? categories : null,
+              scorecard: finalScorecard,
+              results: finalResults,
+              n: finalResults.length,
+              source: "ui",
+            })
           }
           if (data.type === "error") {
             setError(data.message || "Benchmark error")
@@ -88,7 +134,50 @@ export function useBenchmarkStream() {
       setError(err.message || "Stream failed")
       setStatus("error")
     }
-  }, [reset, alpha, limit, categories])
+  }, [reset, alpha, limit, categories, persistRun])
+
+  const loadSaved = useCallback((id) => {
+    const runData = loadBenchmarkRun(id)
+    if (!runData) return
+    setActiveRunId(runData.id)
+    setScorecard(runData.scorecard || null)
+    setResults(runData.results || [])
+    setProgress({ index: runData.n || runData.results?.length || 0, n: runData.n || runData.results?.length || 0 })
+    setStatus("complete")
+    setError(null)
+    if (typeof runData.alpha === "number") setAlpha(runData.alpha)
+    if (runData.limit != null) setLimit(runData.limit || 0)
+    if (Array.isArray(runData.categories)) setCategories(runData.categories)
+  }, [])
+
+  const removeSaved = useCallback(
+    (id) => {
+      deleteBenchmarkRun(id)
+      refreshSaved()
+      if (activeRunId === id) reset()
+    },
+    [activeRunId, refreshSaved, reset]
+  )
+
+  const downloadActive = useCallback(() => {
+    const runData =
+      (activeRunId && loadBenchmarkRun(activeRunId)) ||
+      (scorecard
+        ? {
+            id: `benchmark_${new Date().toISOString().replace(/[:.]/g, "-")}`,
+            alpha,
+            limit,
+            categories,
+            scorecard,
+            results,
+            n: results.length,
+            source: "ui",
+            savedAt: new Date().toISOString(),
+          }
+        : null)
+    if (!runData) return
+    downloadBenchmarkRun(runData)
+  }, [activeRunId, scorecard, alpha, limit, categories, results])
 
   return {
     status,
@@ -104,5 +193,10 @@ export function useBenchmarkStream() {
     setCategories,
     run,
     reset,
+    savedRuns,
+    activeRunId,
+    loadSaved,
+    removeSaved,
+    downloadActive,
   }
 }
