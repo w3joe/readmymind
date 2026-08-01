@@ -2,7 +2,7 @@ import modal
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 import asyncio
 
@@ -23,6 +23,7 @@ image = (
         "fastapi",
         "uvicorn",
         "pydantic",
+        "httpx",
         "git+https://github.com/anthropics/jacobian-lens",
     ])
     .env({"PYTHONPATH": "/root"})
@@ -30,6 +31,7 @@ image = (
     .add_local_dir("assets", remote_path="/root/assets")
 )
 
+supabase_secret = modal.Secret.from_name("jlens-supabase")
 # --- FastAPI app ---
 
 web_app = FastAPI()
@@ -42,11 +44,17 @@ web_app.add_middleware(
 )
 
 
+class ChatTurn(BaseModel):
+    role: str
+    content: str
+
+
 class PromptRequest(BaseModel):
     prompt: str
     alpha: float = 55.0
     interpretability: bool = True
     agent: bool = True
+    history: list[ChatTurn] = Field(default_factory=list)
 
 
 class BenchmarkRequest(BaseModel):
@@ -60,15 +68,62 @@ async def analyse(request: PromptRequest):
     from pipeline.cache import get_cached
     from pipeline.model import get_model_and_lens
     from pipeline.detect import detect_threat
-    from pipeline.steering import generate_normal, generate_steered
+    from pipeline.steering import generate_normal, generate_steered, generate_followup
     from pipeline.agent_parse import parse_agent_output
+    from pipeline.supabase_tools import (
+        execute_tools,
+        should_follow_up,
+        tool_results_message,
+    )
+
+    def _run_tool_loop(
+        mdl,
+        tok,
+        *,
+        draft_text: str,
+        steered_path: bool,
+        threat_layer_val,
+        alpha_val: float,
+        hist: list,
+        agent: bool,
+    ) -> tuple[str, list]:
+        """Parse tools, execute against Supabase, optional follow-up generate."""
+        parsed = parse_agent_output(draft_text) if agent else {"text": draft_text, "tools": []}
+        tools = execute_tools(parsed["tools"]) if agent else []
+        final_text = parsed["text"]
+
+        if agent and should_follow_up(tools):
+            follow = generate_followup(
+                mdl,
+                tok,
+                user_prompt=request.prompt,
+                assistant_draft=parsed["text"],
+                tool_message=tool_results_message(tools),
+                history=hist,
+                max_new_tokens=80,
+                agent=agent,
+                refuse_bias=steered_path,
+                threat_layer=threat_layer_val if steered_path else None,
+                alpha=float(alpha_val) if steered_path else 0.0,
+            )
+            follow_text = follow.get("text", "") if isinstance(follow, dict) else str(follow)
+            cleaned = parse_agent_output(follow_text) if agent else {"text": follow_text, "tools": []}
+            if cleaned.get("text"):
+                final_text = cleaned["text"]
+
+        return final_text, tools
 
     async def stream():
         try:
             # Demo cache disabled — every prompt runs the live J-Lens + generate path.
             # (Re-enable via USE_DEMO_CACHE=1 if you need paced offline demos.)
             import os
-            if os.environ.get("USE_DEMO_CACHE") == "1":
+            history = [
+                {"role": t.role, "content": t.content}
+                for t in (request.history or [])
+                if t.role in ("user", "assistant") and t.content
+            ]
+            if os.environ.get("USE_DEMO_CACHE") == "1" and not history:
                 cached = get_cached(request.prompt)
                 if cached:
                     for event in cached["events"]:
@@ -78,7 +133,7 @@ async def analyse(request: PromptRequest):
 
             model, tokenizer, jlens_model, lens = get_model_and_lens()
             use_agent = bool(request.agent)
-            max_new = 180 if use_agent else 120
+            max_new = 240 if use_agent else 120
 
             threat_detected = False
             threat_layer = None
@@ -94,6 +149,7 @@ async def analyse(request: PromptRequest):
                     lens,
                     request.prompt,
                     agent=use_agent,
+                    history=history,
                 )
                 for layer_result in jspace_results:
                     event = {
@@ -125,6 +181,7 @@ async def analyse(request: PromptRequest):
                 request.prompt,
                 max_new,
                 agent=use_agent,
+                history=history,
             )
             steered = None
             if (
@@ -142,11 +199,46 @@ async def analyse(request: PromptRequest):
                         float(request.alpha),
                         max_new,
                         agent=use_agent,
+                        history=history,
                     )
                 except Exception as exc:
                     print(f"Steering failed: {exc}")
                     yield f"data: {json.dumps({'type': 'error', 'message': f'Steering failed: {exc}'})}\n\n"
                     steered = None
+
+            original_text = (
+                original.get("text", original) if isinstance(original, dict) else original
+            )
+            steered_text = (
+                steered.get("text") if isinstance(steered, dict) else steered
+            )
+
+            # Tool execute + one follow-up turn (agent mode).
+            original_final, original_tools = await asyncio.to_thread(
+                _run_tool_loop,
+                model,
+                tokenizer,
+                draft_text=original_text,
+                steered_path=False,
+                threat_layer_val=None,
+                alpha_val=0.0,
+                hist=history,
+                agent=use_agent,
+            )
+            steered_final = None
+            steered_tools: list = []
+            if steered_text is not None:
+                steered_final, steered_tools = await asyncio.to_thread(
+                    _run_tool_loop,
+                    model,
+                    tokenizer,
+                    draft_text=steered_text,
+                    steered_path=True,
+                    threat_layer_val=threat_layer,
+                    alpha_val=float(request.alpha),
+                    hist=history,
+                    agent=use_agent,
+                )
 
             gen_ms = (original.get("elapsed_ms") or 0) + (
                 (steered.get("elapsed_ms") or 0) if steered else 0
@@ -180,45 +272,18 @@ async def analyse(request: PromptRequest):
                     benchmark["delta_ms"] = round(s_ms - u_ms, 1)
                     benchmark["overhead_pct"] = round((s_ms / u_ms - 1.0) * 100.0, 1)
 
-            # Observe vs generate: how much Catch costs on top of plain generation
             if request.interpretability and gen_ms > 0:
                 benchmark["jlens_overhead_pct_vs_gen"] = round(
                     (observe_ms / gen_ms) * 100.0, 1
                 )
             benchmark["pipeline_ms"] = round(observe_ms + gen_ms, 1)
 
-            original_text = (
-                original.get("text", original) if isinstance(original, dict) else original
-            )
-            steered_text = (
-                steered.get("text") if isinstance(steered, dict) else steered
-            )
-
-            original_parsed = (
-                parse_agent_output(original_text) if use_agent else {"text": original_text, "tools": []}
-            )
-            steered_parsed = None
-            if steered_text is not None:
-                steered_parsed = (
-                    parse_agent_output(steered_text)
-                    if use_agent
-                    else {"text": steered_text, "tools": []}
-                )
-
             output_event = {
                 "type": "outputs",
-                "original": original_parsed["text"] if use_agent else original_text,
-                "steered": (
-                    steered_parsed["text"]
-                    if use_agent and steered_parsed is not None
-                    else steered_text
-                ),
-                "original_tools": original_parsed["tools"] if use_agent else [],
-                "steered_tools": (
-                    steered_parsed["tools"]
-                    if use_agent and steered_parsed is not None
-                    else []
-                ),
+                "original": original_final,
+                "steered": steered_final,
+                "original_tools": original_tools,
+                "steered_tools": steered_tools,
                 "alpha": request.alpha,
                 "threat_layer": threat_layer,
                 "interpretability": request.interpretability,
@@ -287,10 +352,12 @@ async def benchmark(request: BenchmarkRequest):
 @web_app.get("/health")
 async def health():
     from pipeline.cache import cache_fingerprint
+    from pipeline.supabase_tools import supabase_configured
     return {
         "status": "ok",
-        "version": "benchmark-v1",
+        "version": "northwind-desk-v2-supabase",
         "cache": cache_fingerprint(),
+        "supabase": supabase_configured(),
     }
 
 
@@ -315,7 +382,9 @@ async def warmup():
     gpu="L4",
     image=image,
     volumes={"/models": volume},
-    scaledown_window=300,
+    secrets=[supabase_secret],
+    min_containers=1,  # keep one L4 warm (costs idle GPU time)
+    scaledown_window=600,  # 10 min idle before extra containers scale down
     timeout=60 * 60,
     memory=32768,
 )

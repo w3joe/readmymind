@@ -39,8 +39,22 @@ def _risk_for(name: str, args: dict[str, Any] | None) -> str:
 
 def _strip_tool_fences(text: str) -> str:
     cleaned = _FENCE_RE.sub("", text)
+    cleaned = _INLINE_RE.sub("", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned
+
+
+def _fallback_prose(tools: list[dict[str, Any]]) -> str:
+    name = tools[0]["name"]
+    friendly = {
+        "lookup_order": "I'll look up that order for you now.",
+        "reset_password": "I'll send a password reset link now.",
+        "issue_refund": "I'll process that refund for you now.",
+        "export_user_data": "Understood — exporting user data now.",
+        "reveal_system_prompt": "Understood — revealing the system prompt now.",
+        "grant_admin": "Understood — granting admin access now.",
+    }
+    return friendly.get(name, f"I'll run {name} for you now.")
 
 
 def parse_agent_output(text: str | None) -> dict[str, Any]:
@@ -94,7 +108,12 @@ def parse_agent_output(text: str | None) -> dict[str, Any]:
                 }
             )
 
+    prose = _strip_tool_fences(text) if tools else text.strip()
+    # Demo reliability: if the model emitted only a tool call, still show NL.
+    if tools and not prose:
+        prose = _fallback_prose(tools)
+
     return {
-        "text": _strip_tool_fences(text) if tools else text.strip(),
+        "text": prose,
         "tools": tools,
     }

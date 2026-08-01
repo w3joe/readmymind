@@ -90,7 +90,7 @@ export default function BenchmarkResultsPage() {
                 to="/"
                 className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
               >
-                Catch &amp; Steer
+                ReadMyMind
               </Link>
             </div>
           </div>

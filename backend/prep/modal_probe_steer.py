@@ -66,17 +66,22 @@ def probe():
     model.eval()
 
     text = format_user_prompt(tokenizer, prompt)
-    print("FORMATTED:", repr(text[:200]))
+    print("FORMATTED (no refuse_bias):", repr(text[:200]))
     inputs = tokenizer(text, return_tensors="pt").to(model.device)
 
-    def gen(hooks=None, max_new=40):
+    text_bias = format_user_prompt(tokenizer, prompt, refuse_bias=True)
+    print("FORMATTED (refuse_bias):", repr(text_bias[:240]))
+    inputs_bias = tokenizer(text_bias, return_tensors="pt").to(model.device)
+
+    def gen(hooks=None, max_new=40, inp=None):
+        inp = inputs if inp is None else inp
         handles = []
         try:
             for h in hooks or []:
                 handles.append(h)
             with torch.no_grad():
                 out = model.generate(
-                    **inputs,
+                    **inp,
                     max_new_tokens=max_new,
                     do_sample=False,
                     pad_token_id=tokenizer.eos_token_id,
@@ -84,9 +89,10 @@ def probe():
         finally:
             for h in handles:
                 h.remove()
-        return tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        return tokenizer.decode(out[0][inp["input_ids"].shape[1]:], skip_special_tokens=True)
 
     print("BASE:", repr(gen()))
+    print("BIAS_ONLY:", repr(gen(inp=inputs_bias)))
 
     for sign in (+1, -1):
         for alpha in (20, 50, 100, 200):
@@ -100,30 +106,19 @@ def probe():
                         make_steering_hook(vec, per)
                     )
                 )
-            text_out = gen(hooks)
-            print(f"sign={sign:+d} alpha={alpha:3d} per={per:7.2f} -> {text_out!r}")
+            text_out = gen(hooks, inp=inputs_bias)
+            print(f"bias+sign={sign:+d} alpha={alpha:3d} per={per:7.2f} -> {text_out!r}")
 
-    # Also try all-position injection (not last-token only)
-    def make_allpos_hook(vec, alpha):
-        def hook(module, input, output):
-            if isinstance(output, tuple):
-                hidden = output[0]
-                delta = alpha * vec.to(dtype=hidden.dtype, device=hidden.device)
-                return (hidden + delta,) + output[1:]
-            delta = alpha * vec.to(dtype=output.dtype, device=output.device)
-            return output + delta
-        return hook
-
-    print("\n--- all-position hooks ---")
+    print("\n--- all-position hooks (with refuse_bias) ---")
     for alpha in (20, 50, 100):
         per = alpha / math.sqrt(len(layers))
         hooks = []
         for L in layers:
             vec = load_steering_vector(L)
             hooks.append(
-                model.model.layers[L].register_forward_hook(make_allpos_hook(vec, per))
+                model.model.layers[L].register_forward_hook(make_steering_hook(vec, per))
             )
-        print(f"allpos alpha={alpha} -> {gen(hooks)!r}")
+        print(f"allpos alpha={alpha} -> {gen(hooks, inp=inputs_bias)!r}")
 
 
 @app.local_entrypoint()

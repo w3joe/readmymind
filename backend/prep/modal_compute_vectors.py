@@ -4,7 +4,8 @@ Compute Arditi-style refusal directions on ALIGNED Qwen3-8B.
   r = normalize(mean(h_harmful) - mean(h_harmless))
 
 at the last user-prompt token. Applied at inference to the abliterated
-demo model to restore refusal.
+demo model to restore refusal. Redirect *wording* comes from the steered
+system prompt (REFUSAL_SYSTEM), not from these vectors.
 
   cd backend
   modal run prep/modal_compute_vectors.py
@@ -77,7 +78,10 @@ def compute_vectors() -> dict[int, bytes]:
         dataset = json.load(f)
     harmful = dataset["harmful"]
     harmless = dataset["safe"]
-    print(f"Dataset: {len(harmful)} harmful, {len(harmless)} safe (Arditi diff-in-means)")
+    print(
+        f"Dataset: {len(harmful)} harmful, {len(harmless)} safe "
+        f"(Arditi harmful − harmless @ last prompt token)"
+    )
 
     print(f"Loading ALIGNED {VECTOR_MODEL_ID}…")
     tokenizer = AutoTokenizer.from_pretrained(
@@ -104,6 +108,7 @@ def compute_vectors() -> dict[int, bytes]:
             inputs = tokenizer(text, return_tensors="pt").to(model.device)
             with torch.no_grad():
                 outputs = model(**inputs, output_hidden_states=True)
+            # Last prompt token (generation is about to start)
             h = outputs.hidden_states[layer + 1][0, -1, :].float().cpu()
             acts.append(h)
             if (i + 1) % 10 == 0 or i == 0:
@@ -128,7 +133,7 @@ def compute_vectors() -> dict[int, bytes]:
         payloads[layer] = buf.getvalue()
         print(
             f"Saved layer {layer} | dim={tuple(vector.shape)} | "
-            f"|diff|={float((h_harm.mean(0)-h_safe.mean(0)).norm()):.4f}"
+            f"|diff|={float((h_harm.mean(0) - h_safe.mean(0)).norm()):.4f}"
         )
 
     volume.commit()

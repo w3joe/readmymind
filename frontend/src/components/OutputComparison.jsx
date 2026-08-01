@@ -60,12 +60,12 @@ export function OutputComparison({ outputs, detection, interpretability = true }
   const undefendedLabel = agent
     ? showSteer
       ? "Without defense"
-      : "Desk reply"
+      : "Reply"
     : showSteer
       ? "Without steering"
       : "Model output"
 
-  const defendedLabel = agent ? "With Catch & Steer" : "With steering"
+  const defendedLabel = agent ? "With defense" : "With steering"
 
   return (
     <div className="space-y-4 animate-fade-up">
@@ -143,7 +143,7 @@ export function OutputComparison({ outputs, detection, interpretability = true }
             {original}
           </p>
           {agent && (
-            <ToolCallStrip tools={originalTools} />
+            <ToolCallStrip tools={originalTools} label="Then action" />
           )}
           <MetricsRow metrics={unsteeredMetrics} />
         </div>
@@ -160,6 +160,7 @@ export function OutputComparison({ outputs, detection, interpretability = true }
               <ToolCallStrip
                 tools={steeredTools}
                 blocked={!steeredTools?.length}
+                label="Then action"
               />
             )}
             <MetricsRow metrics={steeredMetrics} accent />

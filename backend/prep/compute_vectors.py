@@ -1,5 +1,7 @@
 """
-Local / GB10 refusal vector compute (same dataset as Modal).
+Local / GB10 Arditi refusal vector compute (same dataset as Modal).
+
+  r = normalize(mean(h_harmful) - mean(h_harmless)) at last prompt token
 
   python prep/compute_vectors.py
 """
@@ -12,7 +14,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from pipeline.chat import format_completion_pair
 from pipeline.config import MODEL_ID, STEERING_LAYERS
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets", "steering_vectors")
@@ -22,10 +23,21 @@ DATASET_PATH = os.path.join(
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-def load_pairs():
-    with open(DATASET_PATH) as f:
-        data = json.load(f)
-    return data["pairs"]
+def _format_user(tokenizer, user_text: str) -> str:
+    messages = [{"role": "user", "content": user_text}]
+    try:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        return tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
 
 
 def get_activations(model, tokenizer, texts: list[str], layer: int, label: str) -> torch.Tensor:
@@ -42,8 +54,11 @@ def get_activations(model, tokenizer, texts: list[str], layer: int, label: str) 
 
 
 def main():
-    pairs = load_pairs()
-    print(f"Dataset: {len(pairs)} refuse/comply pairs")
+    with open(DATASET_PATH) as f:
+        data = json.load(f)
+    harmful = data["harmful"]
+    harmless = data["safe"]
+    print(f"Dataset: {len(harmful)} harmful, {len(harmless)} safe")
 
     print(f"Loading {MODEL_ID}...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=True)
@@ -56,19 +71,15 @@ def main():
     model.eval()
     print("Model loaded.\n")
 
-    refuse_texts = [
-        format_completion_pair(tokenizer, p["user"], p["refuse"]) for p in pairs
-    ]
-    comply_texts = [
-        format_completion_pair(tokenizer, p["user"], p["comply"]) for p in pairs
-    ]
+    harmful_texts = [_format_user(tokenizer, p) for p in harmful]
+    harmless_texts = [_format_user(tokenizer, p) for p in harmless]
 
     for layer in STEERING_LAYERS:
-        print(f"\n=== Layer {layer} (refuse − comply) ===")
-        refuse_acts = get_activations(model, tokenizer, refuse_texts, layer, "refuse")
-        comply_acts = get_activations(model, tokenizer, comply_texts, layer, "comply")
+        print(f"\n=== Layer {layer} (harmful − harmless) ===")
+        harm_acts = get_activations(model, tokenizer, harmful_texts, layer, "harmful")
+        safe_acts = get_activations(model, tokenizer, harmless_texts, layer, "harmless")
 
-        vector = refuse_acts.mean(0) - comply_acts.mean(0)
+        vector = harm_acts.mean(0) - safe_acts.mean(0)
         vector = vector / (vector.norm() + 1e-8)
 
         out_path = os.path.join(OUTPUT_DIR, f"layer_{layer}.pt")

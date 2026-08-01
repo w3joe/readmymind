@@ -34,7 +34,11 @@ export function useSSEStream() {
   }, [])
 
   const analyse = useCallback(async (prompt, options = {}) => {
-    reset()
+    // Clear per-turn observability / outputs, keep conversation in the caller.
+    setLayers([])
+    setDetection(null)
+    setOutputs(null)
+    setError(null)
     setStatus("scanning")
     const strength =
       typeof options.alpha === "number" ? options.alpha : alphaRef.current
@@ -43,6 +47,7 @@ export function useSSEStream() {
       typeof options.interpretability === "boolean"
         ? options.interpretability
         : interpretabilityRef.current
+    const history = Array.isArray(options.history) ? options.history : []
 
     try {
       const response = await fetch(`${BACKEND_URL}/analyse`, {
@@ -52,6 +57,7 @@ export function useSSEStream() {
           prompt,
           alpha: strength,
           interpretability: useInterpretability,
+          history,
         }),
       })
 
@@ -125,7 +131,7 @@ export function useSSEStream() {
       setError(err.message || "Stream failed")
       setStatus("idle")
     }
-  }, [reset])
+  }, [])
 
   return {
     layers,

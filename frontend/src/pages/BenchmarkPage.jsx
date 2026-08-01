@@ -52,7 +52,7 @@ export default function BenchmarkPage() {
         <header className="mb-10 sm:mb-12">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
-              Catch · Steer · Cost
+              ReadMyMind
             </p>
             <div className="flex gap-4">
               <Link
@@ -65,7 +65,7 @@ export default function BenchmarkPage() {
                 to="/"
                 className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
               >
-                ← Catch &amp; Steer
+                ← ReadMyMind
               </Link>
             </div>
           </div>

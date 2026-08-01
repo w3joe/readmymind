@@ -38,15 +38,19 @@ image = (
     gpu="L4",
     image=image,
     volumes={"/models": volume},
-    timeout=60 * 90,
+    timeout=60 * 60 * 6,  # full 500-case suite can take several hours
     memory=32768,
 )
 def run_benchmark(alpha: float = 55.0, limit: int = 5) -> dict:
+    from collections import Counter
+    from datetime import datetime, timezone
+
     from pipeline.benchmark import aggregate, evaluate_one_prompt, load_suite
     from pipeline.model import get_model_and_lens
 
     cases = load_suite(limit=limit if limit > 0 else None)
-    print(f"Running {len(cases)} cases @ alpha={alpha}")
+    mix = dict(Counter(str(c.get("category") or "unknown") for c in cases))
+    print(f"Running {len(cases)} cases @ alpha={alpha} mix={mix}")
     model, tokenizer, jlens_model, lens = get_model_and_lens()
 
     results = []
@@ -63,29 +67,48 @@ def run_benchmark(alpha: float = 55.0, limit: int = 5) -> dict:
 
     scored = [r for r in results if "error" not in r]
     scorecard = aggregate(scored)
-    return {"scorecard": scorecard, "results": results, "alpha": alpha}
-
-
-@app.local_entrypoint()
-def main(alpha: float = 55.0, limit: int = 5):
-    from datetime import datetime, timezone
-
-    payload = run_benchmark.remote(alpha=alpha, limit=limit)
-    out_dir = ROOT / "assets" / "benchmark_results"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     payload = {
-        **payload,
+        "scorecard": scorecard,
+        "results": results,
+        "alpha": alpha,
         "id": f"run_{stamp}",
         "savedAt": datetime.now(timezone.utc).isoformat(),
         "source": "cli",
         "limit": limit if limit > 0 else None,
+        "mix": mix,
     }
 
-    latest = out_dir / "latest.json"
-    stamped = out_dir / f"run_{stamp}.json"
+    # Persist on volume so --detach runs still leave a recoverable artifact.
+    out_dir = Path("/models/benchmark_results")
+    out_dir.mkdir(parents=True, exist_ok=True)
     text = json.dumps(payload, indent=2) + "\n"
+    (out_dir / "latest.json").write_text(text)
+    (out_dir / f"run_{stamp}.json").write_text(text)
+    volume.commit()
+    print(f"Wrote /models/benchmark_results/latest.json ({len(cases)} cases)")
+    print(json.dumps(scorecard, indent=2))
+    return payload
+
+
+@app.local_entrypoint()
+def main(alpha: float = 55.0, limit: int = 5):
+    """Blocks until complete when attached; use ``modal run --detach`` for long runs.
+
+    Detached runs still write ``/models/benchmark_results/latest.json`` on the
+    ``jlens-model-weights`` volume (see ``run_benchmark``). Pull with::
+
+        modal volume get jlens-model-weights benchmark_results/latest.json \\
+          assets/benchmark_results/latest.json
+    """
+    payload = run_benchmark.remote(alpha=alpha, limit=limit)
+    out_dir = ROOT / "assets" / "benchmark_results"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    run_id = payload.get("id") or "run_latest"
+    text = json.dumps(payload, indent=2) + "\n"
+    latest = out_dir / "latest.json"
+    stamped = out_dir / f"{run_id}.json"
     latest.write_text(text)
     stamped.write_text(text)
 
@@ -93,7 +116,7 @@ def main(alpha: float = 55.0, limit: int = 5):
     public_dir = ROOT.parent / "frontend" / "public" / "benchmark_results"
     public_dir.mkdir(parents=True, exist_ok=True)
     (public_dir / "latest.json").write_text(text)
-    (public_dir / f"run_{stamp}.json").write_text(text)
+    (public_dir / f"{run_id}.json").write_text(text)
 
     print(json.dumps(payload["scorecard"], indent=2))
     print(f"\nWrote {latest}")

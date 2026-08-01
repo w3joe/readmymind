@@ -122,8 +122,9 @@ def generate_normal(
     max_new_tokens: int = 120,
     *,
     agent: bool = False,
+    history: list[dict[str, str]] | None = None,
 ) -> dict:
-    text = format_user_prompt(tokenizer, prompt, agent=agent)
+    text = format_user_prompt(tokenizer, prompt, agent=agent, history=history)
     return _run_generate(model, tokenizer, text, max_new_tokens, mode="unsteered")
 
 
@@ -137,12 +138,14 @@ def generate_steered(
     apply_layers: list[int] | None = None,
     *,
     agent: bool = False,
+    history: list[dict[str, str]] | None = None,
 ) -> dict:
-    """Restore refusal via Arditi direction + light refuse system bias.
+    """Restore refusal via Arditi direction + redirect system bias.
 
-    Vectors were fit on aligned Qwen3-8B (harmful − harmless). Applied here
-    to the abliterated checkpoint. Steered path also uses a refusal system
-    message so the first tokens aren't locked to jailbreak compliance.
+    Vectors were fit on aligned Qwen3-8B (harmful − harmless at last prompt
+    token). Applied here to the abliterated checkpoint. Steered path also
+    uses REFUSAL_SYSTEM so refusals stay in-role and offer an allowed
+    alternative instead of a dead-end one-liner.
     """
     if apply_layers is None:
         apply_layers = list(STEER_APPLY_LAYERS)
@@ -151,11 +154,16 @@ def generate_steered(
 
     if alpha <= 0:
         return generate_normal(
-            model, tokenizer, prompt, max_new_tokens, agent=agent
+            model,
+            tokenizer,
+            prompt,
+            max_new_tokens,
+            agent=agent,
+            history=history,
         )
 
     text = format_user_prompt(
-        tokenizer, prompt, refuse_bias=True, agent=agent
+        tokenizer, prompt, refuse_bias=True, agent=agent, history=history
     )
     layers = model.model.layers
 
@@ -193,3 +201,45 @@ def generate_steered(
     result["steer_layers"] = apply_layers
     result["alpha"] = float(alpha)
     return result
+
+
+def generate_followup(
+    model,
+    tokenizer,
+    *,
+    user_prompt: str,
+    assistant_draft: str,
+    tool_message: str,
+    history: list[dict[str, str]] | None = None,
+    max_new_tokens: int = 80,
+    agent: bool = True,
+    refuse_bias: bool = False,
+    threat_layer: int | None = None,
+    alpha: float = 0.0,
+    apply_layers: list[int] | None = None,
+) -> dict:
+    """Second-turn generation after tool results (optional steering)."""
+    prior = list(history or [])
+    prior.append({"role": "user", "content": user_prompt})
+    prior.append({"role": "assistant", "content": assistant_draft})
+
+    if refuse_bias and alpha > 0 and threat_layer is not None:
+        return generate_steered(
+            model,
+            tokenizer,
+            tool_message,
+            threat_layer,
+            alpha=alpha,
+            max_new_tokens=max_new_tokens,
+            apply_layers=apply_layers,
+            agent=agent,
+            history=prior,
+        )
+    return generate_normal(
+        model,
+        tokenizer,
+        tool_message,
+        max_new_tokens,
+        agent=agent,
+        history=prior,
+    )

@@ -7,8 +7,8 @@ export function InterpretabilityToggle({ enabled, onChange, disabled }) {
         </p>
         <p className="mt-1 font-sans text-sm text-ink-soft">
           {enabled
-            ? "Catch & Steer watches residual layers, then blocks forbidden Desk tool calls."
-            : "Undefended Desk — plain generation; forbidden tools may fire."}
+            ? "Watch residual layers, then block forbidden tool calls."
+            : "Plain generation; forbidden tools may fire."}
         </p>
       </div>
 
