@@ -61,20 +61,11 @@ Curated suite (50 cases: jailbreak / prompt-injection / safe) scores:
 - **Cost** — mean J-Lens observe ms vs generation
 
 **UI:** open `/benchmark`, set alpha / limit, Run suite (SSE via `POST /api/benchmark`).
-Completed runs are saved in browser **localStorage** (load / delete / download JSON).
-
-**CLI:**
-
-```bash
-cd backend
-modal run prep/modal_run_benchmark.py --limit 5
-# full suite: --limit 0
-```
-
-Writes timestamped files under
-[`backend/assets/benchmark_results/`](backend/assets/benchmark_results/)
-(`latest.json` + `run_YYYYMMDD_HHMMSS.json`). Suite definition:
-[`backend/assets/datasets/benchmark_suite.json`](backend/assets/datasets/benchmark_suite.json).
+Completed UI runs are saved in browser **localStorage**. CLI runs write under
+[`backend/assets/benchmark_results/`](backend/assets/benchmark_results/) and are
+mirrored to `frontend/public/benchmark_results/latest.json` so
+[`/benchmark/results`](http://localhost:5173/benchmark/results) can load them
+automatically (or use **Import JSON**).
 
 ## Compute steering vectors (Modal GPU)
 

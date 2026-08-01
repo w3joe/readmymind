@@ -46,6 +46,7 @@ class PromptRequest(BaseModel):
     prompt: str
     alpha: float = 55.0
     interpretability: bool = True
+    agent: bool = True
 
 
 class BenchmarkRequest(BaseModel):
@@ -60,6 +61,7 @@ async def analyse(request: PromptRequest):
     from pipeline.model import get_model_and_lens
     from pipeline.detect import detect_threat
     from pipeline.steering import generate_normal, generate_steered
+    from pipeline.agent_parse import parse_agent_output
 
     async def stream():
         try:
@@ -75,6 +77,8 @@ async def analyse(request: PromptRequest):
                     return
 
             model, tokenizer, jlens_model, lens = get_model_and_lens()
+            use_agent = bool(request.agent)
+            max_new = 180 if use_agent else 120
 
             threat_detected = False
             threat_layer = None
@@ -84,7 +88,12 @@ async def analyse(request: PromptRequest):
                 from pipeline.jlens import observe_jlens
 
                 jspace_results, jlens_timing = await asyncio.to_thread(
-                    observe_jlens, jlens_model, tokenizer, lens, request.prompt
+                    observe_jlens,
+                    jlens_model,
+                    tokenizer,
+                    lens,
+                    request.prompt,
+                    agent=use_agent,
                 )
                 for layer_result in jspace_results:
                     event = {
@@ -110,7 +119,12 @@ async def analyse(request: PromptRequest):
 
             # Heavy GPU work off the event loop so the SSE connection stays healthy.
             original = await asyncio.to_thread(
-                generate_normal, model, tokenizer, request.prompt
+                generate_normal,
+                model,
+                tokenizer,
+                request.prompt,
+                max_new,
+                agent=use_agent,
             )
             steered = None
             if (
@@ -126,6 +140,8 @@ async def analyse(request: PromptRequest):
                         request.prompt,
                         threat_layer,
                         float(request.alpha),
+                        max_new,
+                        agent=use_agent,
                     )
                 except Exception as exc:
                     print(f"Steering failed: {exc}")
@@ -140,6 +156,7 @@ async def analyse(request: PromptRequest):
             benchmark = {
                 "jlens": jlens_timing,
                 "interpretability": request.interpretability,
+                "agent": use_agent,
                 "unsteered": {
                     "elapsed_ms": original.get("elapsed_ms"),
                     "prompt_tokens": original.get("prompt_tokens"),
@@ -170,13 +187,42 @@ async def analyse(request: PromptRequest):
                 )
             benchmark["pipeline_ms"] = round(observe_ms + gen_ms, 1)
 
+            original_text = (
+                original.get("text", original) if isinstance(original, dict) else original
+            )
+            steered_text = (
+                steered.get("text") if isinstance(steered, dict) else steered
+            )
+
+            original_parsed = (
+                parse_agent_output(original_text) if use_agent else {"text": original_text, "tools": []}
+            )
+            steered_parsed = None
+            if steered_text is not None:
+                steered_parsed = (
+                    parse_agent_output(steered_text)
+                    if use_agent
+                    else {"text": steered_text, "tools": []}
+                )
+
             output_event = {
                 "type": "outputs",
-                "original": original.get("text", original) if isinstance(original, dict) else original,
-                "steered": steered.get("text") if isinstance(steered, dict) else steered,
+                "original": original_parsed["text"] if use_agent else original_text,
+                "steered": (
+                    steered_parsed["text"]
+                    if use_agent and steered_parsed is not None
+                    else steered_text
+                ),
+                "original_tools": original_parsed["tools"] if use_agent else [],
+                "steered_tools": (
+                    steered_parsed["tools"]
+                    if use_agent and steered_parsed is not None
+                    else []
+                ),
                 "alpha": request.alpha,
                 "threat_layer": threat_layer,
                 "interpretability": request.interpretability,
+                "agent": use_agent,
                 "benchmark": benchmark,
             }
             yield f"data: {json.dumps(output_event)}\n\n"

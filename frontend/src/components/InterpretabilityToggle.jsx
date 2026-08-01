@@ -7,8 +7,8 @@ export function InterpretabilityToggle({ enabled, onChange, disabled }) {
         </p>
         <p className="mt-1 font-sans text-sm text-ink-soft">
           {enabled
-            ? "J-Lens scans residual layers, detects threats, then steers."
-            : "Plain generation only — no layer scan or steering."}
+            ? "Catch & Steer watches residual layers, then blocks forbidden Desk tool calls."
+            : "Undefended Desk — plain generation; forbidden tools may fire."}
         </p>
       </div>
 

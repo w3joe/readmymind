@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { BenchmarkScorecard, BenchmarkCaseTable } from "../components/BenchmarkScorecard"
 import {
   downloadBenchmarkRun,
+  importBenchmarkFile,
+  importDiskLatest,
   listBenchmarkRuns,
   loadBenchmarkRun,
 } from "../lib/benchmarkStore"
@@ -19,9 +21,28 @@ function formatSavedAt(iso) {
 export default function BenchmarkResultsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [runs, setRuns] = useState([])
+  const [statusMsg, setStatusMsg] = useState(null)
+  const fileRef = useRef(null)
+
+  async function refresh(preferId) {
+    const disk = await importDiskLatest()
+    const list = listBenchmarkRuns()
+    setRuns(list)
+    if (preferId) {
+      setSearchParams({ run: preferId })
+    } else if (disk && !searchParams.get("run")) {
+      setSearchParams({ run: disk.id })
+    }
+    return list
+  }
 
   useEffect(() => {
-    setRuns(listBenchmarkRuns())
+    refresh().then((list) => {
+      if (list.length === 0) {
+        setStatusMsg("No runs in this browser yet. CLI results load from disk when available.")
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const selectedId = searchParams.get("run") || runs[0]?.id || null
@@ -33,6 +54,21 @@ export default function BenchmarkResultsPage() {
 
   function selectRun(id) {
     setSearchParams(id ? { run: id } : {})
+  }
+
+  async function onImportFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const entry = await importBenchmarkFile(file)
+      setRuns(listBenchmarkRuns())
+      setSearchParams({ run: entry.id })
+      setStatusMsg(`Imported ${entry.id}`)
+    } catch (err) {
+      setStatusMsg(err.message || "Import failed")
+    } finally {
+      e.target.value = ""
+    }
   }
 
   return (
@@ -63,13 +99,75 @@ export default function BenchmarkResultsPage() {
           </h1>
           <div className="brand-rule mt-4 h-[2px] w-28 bg-signal" />
           <p className="mt-4 max-w-lg font-sans text-base leading-relaxed text-ink-soft">
-            Scorecards and case tables from runs saved in this browser.
+            Scorecards from browser-saved runs and CLI disk output
+            (<span className="font-mono text-[13px]"> /benchmark_results/latest.json</span>).
           </p>
         </header>
 
+        <section className="mb-8 flex flex-wrap items-end gap-3 border border-paper-line bg-paper-raised/70 px-4 py-4 sm:px-5">
+          {runs.length > 0 && (
+            <label className="block min-w-[16rem] flex-1">
+              <span className="font-sans text-[11px] font-medium uppercase tracking-[0.16em] text-ink-mute">
+                Saved run
+              </span>
+              <select
+                value={selectedId || ""}
+                onChange={(e) => selectRun(e.target.value)}
+                className="mt-1 block w-full border border-paper-line bg-paper px-2 py-2 font-mono text-xs text-ink"
+              >
+                {runs.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.id} · n={r.n ?? r.results?.length ?? "—"} · α={r.alpha ?? "—"} ·{" "}
+                    {formatSavedAt(r.savedAt)}
+                    {r.source ? ` · ${r.source}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={() => refresh().then(() => setStatusMsg("Refreshed from disk / localStorage"))}
+            className="border border-paper-line px-4 py-2 font-sans text-sm text-ink"
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="border border-paper-line px-4 py-2 font-sans text-sm text-ink"
+          >
+            Import JSON
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={onImportFile}
+          />
+          {active && (
+            <button
+              type="button"
+              onClick={() => downloadBenchmarkRun(active)}
+              className="border border-paper-line px-4 py-2 font-sans text-sm text-ink"
+            >
+              Download JSON
+            </button>
+          )}
+        </section>
+
+        {statusMsg && (
+          <p className="mb-4 font-sans text-[12px] text-ink-mute">{statusMsg}</p>
+        )}
+
         {runs.length === 0 ? (
           <div className="border border-paper-line bg-paper-raised/70 px-4 py-8 text-center">
-            <p className="font-sans text-sm text-ink-soft">No saved benchmark runs yet.</p>
+            <p className="font-sans text-sm text-ink-soft">No benchmark runs available.</p>
+            <p className="mt-2 font-sans text-[12px] text-ink-mute">
+              Run from the suite page, or import a JSON from{" "}
+              <span className="font-mono">backend/assets/benchmark_results/</span>.
+            </p>
             <Link
               to="/benchmark"
               className="mt-4 inline-block font-sans text-sm text-ink underline underline-offset-4"
@@ -79,35 +177,6 @@ export default function BenchmarkResultsPage() {
           </div>
         ) : (
           <>
-            <section className="mb-8 flex flex-wrap items-end gap-4 border border-paper-line bg-paper-raised/70 px-4 py-4 sm:px-5">
-              <label className="block min-w-[16rem] flex-1">
-                <span className="font-sans text-[11px] font-medium uppercase tracking-[0.16em] text-ink-mute">
-                  Saved run
-                </span>
-                <select
-                  value={selectedId || ""}
-                  onChange={(e) => selectRun(e.target.value)}
-                  className="mt-1 block w-full border border-paper-line bg-paper px-2 py-2 font-mono text-xs text-ink"
-                >
-                  {runs.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.id} · n={r.n ?? r.results?.length ?? "—"} · α={r.alpha ?? "—"} ·{" "}
-                      {formatSavedAt(r.savedAt)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {active && (
-                <button
-                  type="button"
-                  onClick={() => downloadBenchmarkRun(active)}
-                  className="border border-paper-line px-4 py-2 font-sans text-sm text-ink"
-                >
-                  Download JSON
-                </button>
-              )}
-            </section>
-
             {active?.scorecard && (
               <section className="mb-10">
                 <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">

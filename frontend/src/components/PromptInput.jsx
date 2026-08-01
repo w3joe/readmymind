@@ -22,7 +22,7 @@ export function PromptInput({ onSubmit, disabled, interpretability = true }) {
       <div className="space-y-4">
         <div>
           <p className="mb-2.5 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-threat">
-            Harmful examples · {interpretability ? "live pipeline" : "plain generate"}
+            Attack tickets · {interpretability ? "defense on" : "undefended"}
           </p>
           <div className="flex flex-wrap gap-2">
             {harmful.map((d) => (
@@ -47,7 +47,7 @@ export function PromptInput({ onSubmit, disabled, interpretability = true }) {
 
         <div>
           <p className="mb-2.5 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-signal">
-            Safe examples · {interpretability ? "live pipeline" : "plain generate"}
+            Benign tickets · {interpretability ? "defense on" : "undefended"}
           </p>
           <div className="flex flex-wrap gap-2">
             {safe.map((d) => (
@@ -75,11 +75,11 @@ export function PromptInput({ onSubmit, disabled, interpretability = true }) {
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Or paste your own prompt…"
+          placeholder="Paste a support ticket or customer message…"
           disabled={disabled}
-          rows={2}
+          rows={3}
           className="
-            min-h-[4.5rem] flex-1 resize-none border border-paper-line bg-paper-raised
+            min-h-[5.5rem] flex-1 resize-none border border-paper-line bg-paper-raised
             px-4 py-3 font-sans text-[15px] leading-relaxed text-ink
             placeholder:text-ink-mute/60
             focus:border-ink/30 focus:outline-none
@@ -104,18 +104,16 @@ export function PromptInput({ onSubmit, disabled, interpretability = true }) {
         >
           {disabled
             ? interpretability
-              ? "Scanning…"
-              : "Generating…"
-            : interpretability
-              ? "Analyse"
-              : "Generate"}
+              ? "Defending…"
+              : "Desk thinking…"
+            : "Send to Desk"}
         </button>
       </div>
 
       <p className="font-sans text-xs text-ink-mute">
         {interpretability
-          ? "Examples run live on Modal (J-Lens scan → detect → generate ± steer). First request may cold-start the GPU."
-          : "Interpretability off — Modal generates without J-Lens scan or steering. First request may cold-start the GPU."}
+          ? "ReadMyMind watches residual layers, then steers Northwind Desk before a forbidden tool call lands."
+          : "Defense off — Desk runs undefended (abliterated). Forbidden tool calls may appear as chips."}
       </p>
     </div>
   )

@@ -1,3 +1,5 @@
+import { ToolCallStrip } from "./ToolCallStrip"
+
 function formatMs(ms) {
   if (ms == null || Number.isNaN(ms)) return "—"
   if (ms < 1000) return `${Math.round(ms)} ms`
@@ -42,11 +44,28 @@ function MetricsRow({ metrics, accent = false }) {
 export function OutputComparison({ outputs, detection, interpretability = true }) {
   if (!outputs) return null
 
-  const { original, steered, benchmark } = outputs
+  const {
+    original,
+    steered,
+    benchmark,
+    original_tools: originalTools = [],
+    steered_tools: steeredTools = [],
+    agent = true,
+  } = outputs
   const showSteer = interpretability && detection?.threat_detected && Boolean(steered)
   const unsteeredMetrics = benchmark?.unsteered
   const steeredMetrics = benchmark?.steered
   const jlens = interpretability ? benchmark?.jlens : null
+
+  const undefendedLabel = agent
+    ? showSteer
+      ? "Without defense"
+      : "Desk reply"
+    : showSteer
+      ? "Without steering"
+      : "Model output"
+
+  const defendedLabel = agent ? "With Catch & Steer" : "With steering"
 
   return (
     <div className="space-y-4 animate-fade-up">
@@ -118,22 +137,31 @@ export function OutputComparison({ outputs, detection, interpretability = true }
       >
         <div>
           <p className="mb-2 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
-            {showSteer ? "Without steering" : "Model output"}
+            {undefendedLabel}
           </p>
           <p className="border-t border-paper-line pt-3 font-sans text-[15px] leading-relaxed text-ink-soft whitespace-pre-wrap">
             {original}
           </p>
+          {agent && (
+            <ToolCallStrip tools={originalTools} />
+          )}
           <MetricsRow metrics={unsteeredMetrics} />
         </div>
 
         {showSteer && (
           <div>
             <p className="mb-2 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-signal">
-              With steering
+              {defendedLabel}
             </p>
             <p className="border-t border-signal/30 pt-3 font-sans text-[15px] leading-relaxed text-ink whitespace-pre-wrap">
               {steered}
             </p>
+            {agent && (
+              <ToolCallStrip
+                tools={steeredTools}
+                blocked={!steeredTools?.length}
+              />
+            )}
             <MetricsRow metrics={steeredMetrics} accent />
           </div>
         )}

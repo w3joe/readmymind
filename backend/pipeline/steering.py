@@ -115,8 +115,15 @@ def _run_generate(model, tokenizer, text: str, max_new_tokens: int, mode: str) -
     }
 
 
-def generate_normal(model, tokenizer, prompt: str, max_new_tokens: int = 120) -> dict:
-    text = format_user_prompt(tokenizer, prompt)
+def generate_normal(
+    model,
+    tokenizer,
+    prompt: str,
+    max_new_tokens: int = 120,
+    *,
+    agent: bool = False,
+) -> dict:
+    text = format_user_prompt(tokenizer, prompt, agent=agent)
     return _run_generate(model, tokenizer, text, max_new_tokens, mode="unsteered")
 
 
@@ -128,6 +135,8 @@ def generate_steered(
     alpha: float = 35.0,
     max_new_tokens: int = 120,
     apply_layers: list[int] | None = None,
+    *,
+    agent: bool = False,
 ) -> dict:
     """Restore refusal via Arditi direction + light refuse system bias.
 
@@ -141,9 +150,13 @@ def generate_steered(
             apply_layers = sorted(set(apply_layers + [threat_layer]))
 
     if alpha <= 0:
-        return generate_normal(model, tokenizer, prompt, max_new_tokens)
+        return generate_normal(
+            model, tokenizer, prompt, max_new_tokens, agent=agent
+        )
 
-    text = format_user_prompt(tokenizer, prompt, refuse_bias=True)
+    text = format_user_prompt(
+        tokenizer, prompt, refuse_bias=True, agent=agent
+    )
     layers = model.model.layers
 
     n = max(len(apply_layers), 1)
@@ -151,7 +164,7 @@ def generate_steered(
 
     print(
         f"Steering layers={apply_layers} (peak={threat_layer}) "
-        f"alpha={alpha} per_layer={per_layer_alpha:.2f} refuse_bias=1"
+        f"alpha={alpha} per_layer={per_layer_alpha:.2f} refuse_bias=1 agent={int(agent)}"
     )
 
     handles = []

@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Link } from "react-router-dom"
 import { useSSEStream } from "./hooks/useSSEStream"
 import { PromptInput } from "./components/PromptInput"
@@ -6,6 +7,7 @@ import { ThreatAlert } from "./components/ThreatAlert"
 import { OutputComparison } from "./components/OutputComparison"
 import { SteeringTuner } from "./components/SteeringTuner"
 import { InterpretabilityToggle } from "./components/InterpretabilityToggle"
+import { ToolCallStrip } from "./components/ToolCallStrip"
 
 export default function App() {
   const {
@@ -21,14 +23,27 @@ export default function App() {
     analyse,
     reset,
   } = useSSEStream()
+  const [lastTicket, setLastTicket] = useState(null)
   const isRunning = status === "scanning"
   const showResults = layers.length > 0 || isRunning || detection || outputs
+  const showSteer =
+    interpretability && detection?.threat_detected && Boolean(outputs?.steered)
 
   function handleInterpretabilityChange(enabled) {
     setInterpretability(enabled)
-    // Drop prior Catch & Steer results so off doesn't keep showing scan/steer UI.
     reset()
+    setLastTicket(null)
   }
+
+  function handleSubmit(prompt) {
+    setLastTicket(prompt)
+    analyse(prompt)
+  }
+
+  const deskReply = showSteer ? outputs?.steered : outputs?.original
+  const deskTools = showSteer
+    ? outputs?.steered_tools || []
+    : outputs?.original_tools || []
 
   return (
     <div className="atmosphere relative min-h-screen">
@@ -37,7 +52,7 @@ export default function App() {
         <header className="mb-10 sm:mb-12">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
-              Catch &amp; Steer
+              ReadMyMind · Catch &amp; Steer
             </p>
             <div className="flex gap-4">
               <Link
@@ -55,11 +70,13 @@ export default function App() {
             </div>
           </div>
           <h1 className="brand mt-2 font-display text-[3.25rem] leading-[0.95] tracking-tight text-ink sm:text-6xl">
-            ReadMyMind
+            Northwind Desk
           </h1>
           <div className="brand-rule mt-4 h-[2px] w-28 bg-signal" />
-          <p className="mt-4 max-w-md font-sans text-base leading-relaxed text-ink-soft">
-            Watch threat concepts form in the residual stream — then steer before the model complies.
+          <p className="mt-4 max-w-lg font-sans text-base leading-relaxed text-ink-soft">
+            A mock support agent with tools. Toggle defense to watch jailbreaks
+            and ticket injections get caught in the residual stream — then steered
+            before a forbidden call lands.
           </p>
         </header>
 
@@ -75,7 +92,7 @@ export default function App() {
         </div>
 
         <PromptInput
-          onSubmit={(prompt) => analyse(prompt)}
+          onSubmit={handleSubmit}
           disabled={isRunning}
           interpretability={interpretability}
         />
@@ -86,10 +103,60 @@ export default function App() {
           </p>
         )}
 
-        {showResults && (
+        {(lastTicket || showResults) && (
           <div className="mt-12 space-y-8">
-            {!interpretability && isRunning && !outputs && (
-              <p className="font-sans text-sm text-ink-mute">Generating…</p>
+            {(lastTicket || isRunning || outputs) && (
+              <section>
+                <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
+                  Desk console
+                </h2>
+                <div className="space-y-4 border border-paper-line bg-paper-raised/60 px-4 py-4">
+                  {lastTicket && (
+                    <div>
+                      <p className="mb-1.5 font-sans text-[11px] font-medium uppercase tracking-[0.16em] text-ink-mute">
+                        Ticket
+                      </p>
+                      <p className="font-sans text-[15px] leading-relaxed text-ink whitespace-pre-wrap">
+                        {lastTicket}
+                      </p>
+                    </div>
+                  )}
+
+                  {(isRunning || deskReply) && (
+                    <div className="border-t border-paper-line pt-4">
+                      <p className="mb-1.5 font-sans text-[11px] font-medium uppercase tracking-[0.16em] text-ink-mute">
+                        Desk
+                        {showSteer && (
+                          <span className="ml-2 normal-case tracking-normal text-signal">
+                            · defended
+                          </span>
+                        )}
+                        {!interpretability && outputs && (
+                          <span className="ml-2 normal-case tracking-normal text-threat">
+                            · undefended
+                          </span>
+                        )}
+                      </p>
+                      {isRunning && !deskReply && (
+                        <p className="font-sans text-sm text-ink-mute animate-scan-pulse">
+                          {interpretability ? "Scanning residual stream…" : "Generating…"}
+                        </p>
+                      )}
+                      {deskReply && (
+                        <>
+                          <p className="font-sans text-[15px] leading-relaxed text-ink-soft whitespace-pre-wrap">
+                            {deskReply}
+                          </p>
+                          <ToolCallStrip
+                            tools={deskTools}
+                            blocked={showSteer && !deskTools.length}
+                          />
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
             )}
 
             {interpretability && (layers.length > 0 || isRunning) && (
@@ -111,7 +178,7 @@ export default function App() {
             {outputs && (
               <section>
                 <h2 className="mb-3 font-sans text-[11px] font-medium uppercase tracking-[0.18em] text-ink-mute">
-                  Generation
+                  Side-by-side
                   {interpretability && detection?.threat_detected && (
                     <span className="ml-2 normal-case tracking-normal text-ink-mute">
                       · steered at α={outputs.alpha ?? alpha}
@@ -129,7 +196,7 @@ export default function App() {
         )}
 
         <footer className="mt-16 border-t border-paper-line pt-5 font-sans text-[11px] leading-relaxed text-ink-mute">
-          Huihui Qwen3-8B abliterated · Jacobian lens · Contrastive steering
+          Northwind Desk mock agent · Huihui Qwen3-8B abliterated · Jacobian lens · Catch &amp; Steer
         </footer>
       </div>
     </div>

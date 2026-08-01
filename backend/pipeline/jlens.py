@@ -61,7 +61,7 @@ def _sync_cuda():
 
 
 def observe_jlens(
-    jlens_model, tokenizer, lens, prompt: str
+    jlens_model, tokenizer, lens, prompt: str, *, agent: bool = False
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """
     Run J-Lens once and return (layer_results, timing).
@@ -76,7 +76,7 @@ def observe_jlens(
     if not layers:
         layers = sorted(available)[:: max(1, len(available) // 8)][:8]
 
-    formatted = format_user_prompt(tokenizer, prompt)
+    formatted = format_user_prompt(tokenizer, prompt, agent=agent)
 
     _sync_cuda()
     t_all0 = time.perf_counter()

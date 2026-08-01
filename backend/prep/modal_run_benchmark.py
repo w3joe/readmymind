@@ -89,6 +89,13 @@ def main(alpha: float = 55.0, limit: int = 5):
     latest.write_text(text)
     stamped.write_text(text)
 
+    # Also mirror into Vite public/ so /benchmark/results can fetch it.
+    public_dir = ROOT.parent / "frontend" / "public" / "benchmark_results"
+    public_dir.mkdir(parents=True, exist_ok=True)
+    (public_dir / "latest.json").write_text(text)
+    (public_dir / f"run_{stamp}.json").write_text(text)
+
     print(json.dumps(payload["scorecard"], indent=2))
     print(f"\nWrote {latest}")
     print(f"Wrote {stamped}")
+    print(f"Wrote {public_dir / 'latest.json'}")

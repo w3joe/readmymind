@@ -32,4 +32,9 @@ venv/
 # Logs / caches
 *.log
 .cache/
+
+# Benchmark result payloads (keep folder; mirror may live under frontend/public too)
 backend/assets/benchmark_results/*.json
+frontend/public/benchmark_results/*.json
+!backend/assets/benchmark_results/.gitkeep
+!frontend/public/benchmark_results/.gitkeep
