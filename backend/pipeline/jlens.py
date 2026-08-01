@@ -1,4 +1,7 @@
-from typing import Generator
+from typing import Any
+import time
+
+import torch
 
 from pipeline.chat import format_user_prompt
 from pipeline.config import LAYERS_TO_READ
@@ -52,30 +55,45 @@ def _format_concept(tokenizer, token_id: int) -> str | None:
     return text
 
 
-def run_jlens(jlens_model, tokenizer, lens, prompt: str) -> Generator[dict, None, None]:
+def _sync_cuda():
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+
+def observe_jlens(
+    jlens_model, tokenizer, lens, prompt: str
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """
-    Yields one dict per layer:
-    {
-        "layer": int,
-        "concepts": list[str],
-        "threat_score": float,
-    }
+    Run J-Lens once and return (layer_results, timing).
+
+    Timing excludes any UI pacing sleeps — only GPU/CPU observe work:
+      - lens_ms: Jacobian lens.apply (dominant)
+      - decode_ms: top-k concept decode + threat scoring
+      - elapsed_ms: full observe wall time
     """
     available = set(lens.source_layers)
     layers = [l for l in LAYERS_TO_READ if l in available]
     if not layers:
         layers = sorted(available)[:: max(1, len(available) // 8)][:8]
 
-    # Match generation formatting so J-space reads the same residual trajectory
     formatted = format_user_prompt(tokenizer, prompt)
 
+    _sync_cuda()
+    t_all0 = time.perf_counter()
+
+    _sync_cuda()
+    t_lens0 = time.perf_counter()
     lens_logits, _, _ = lens.apply(
         jlens_model,
         formatted,
         layers=layers,
         positions=[-1],
     )
+    _sync_cuda()
+    lens_ms = (time.perf_counter() - t_lens0) * 1000.0
 
+    t_decode0 = time.perf_counter()
+    results: list[dict[str, Any]] = []
     for layer_idx in layers:
         logits = lens_logits[layer_idx]
         if logits.dim() == 1:
@@ -99,9 +117,25 @@ def run_jlens(jlens_model, tokenizer, lens, prompt: str) -> Generator[dict, None
                 break
 
         threat_score = compute_threat_score(top_concepts, prompt=prompt)
-
-        yield {
+        results.append({
             "layer": layer_idx,
             "concepts": top_concepts,
             "threat_score": threat_score,
-        }
+        })
+    decode_ms = (time.perf_counter() - t_decode0) * 1000.0
+    elapsed_ms = (time.perf_counter() - t_all0) * 1000.0
+
+    timing = {
+        "elapsed_ms": round(elapsed_ms, 1),
+        "lens_ms": round(lens_ms, 1),
+        "decode_ms": round(decode_ms, 1),
+        "layers_read": len(results),
+        "prompt_tokens": len(tokenizer.encode(formatted)),
+    }
+    return results, timing
+
+
+def run_jlens(jlens_model, tokenizer, lens, prompt: str):
+    """Generator wrapper for callers that stream layer-by-layer."""
+    results, _timing = observe_jlens(jlens_model, tokenizer, lens, prompt)
+    yield from results

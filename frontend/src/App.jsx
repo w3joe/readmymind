@@ -52,6 +52,7 @@ export default function App() {
                   layers={layers}
                   status={status}
                   threatLayer={detection?.threat_layer}
+                  jlensTiming={detection?.jlens ?? outputs?.benchmark?.jlens}
                 />
               </section>
             )}

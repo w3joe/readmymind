@@ -51,7 +51,6 @@ class PromptRequest(BaseModel):
 async def analyse(request: PromptRequest):
     from pipeline.cache import get_cached
     from pipeline.model import get_model_and_lens
-    from pipeline.jlens import run_jlens
     from pipeline.detect import detect_threat
     from pipeline.steering import generate_normal, generate_steered
 
@@ -70,9 +69,12 @@ async def analyse(request: PromptRequest):
 
             model, tokenizer, jlens_model, lens = get_model_and_lens()
 
-            jspace_results = []
-            for layer_result in run_jlens(jlens_model, tokenizer, lens, request.prompt):
-                jspace_results.append(layer_result)
+            from pipeline.jlens import observe_jlens
+
+            jspace_results, jlens_timing = await asyncio.to_thread(
+                observe_jlens, jlens_model, tokenizer, lens, request.prompt
+            )
+            for layer_result in jspace_results:
                 event = {
                     "type": "layer",
                     "layer": layer_result["layer"],
@@ -90,6 +92,7 @@ async def analyse(request: PromptRequest):
                 "threat_detected": threat_detected,
                 "threat_layer": threat_layer,
                 "alpha": request.alpha,
+                "jlens": jlens_timing,
             }
             yield f"data: {json.dumps(detection_event)}\n\n"
 
@@ -113,7 +116,13 @@ async def analyse(request: PromptRequest):
                     yield f"data: {json.dumps({'type': 'error', 'message': f'Steering failed: {exc}'})}\n\n"
                     steered = None
 
+            gen_ms = (original.get("elapsed_ms") or 0) + (
+                (steered.get("elapsed_ms") or 0) if steered else 0
+            )
+            observe_ms = jlens_timing.get("elapsed_ms") or 0
+
             benchmark = {
+                "jlens": jlens_timing,
                 "unsteered": {
                     "elapsed_ms": original.get("elapsed_ms"),
                     "prompt_tokens": original.get("prompt_tokens"),
@@ -137,6 +146,13 @@ async def analyse(request: PromptRequest):
                     benchmark["delta_ms"] = round(s_ms - u_ms, 1)
                     benchmark["overhead_pct"] = round((s_ms / u_ms - 1.0) * 100.0, 1)
 
+            # Observe vs generate: how much Catch costs on top of plain generation
+            if gen_ms > 0:
+                benchmark["jlens_overhead_pct_vs_gen"] = round(
+                    (observe_ms / gen_ms) * 100.0, 1
+                )
+            benchmark["pipeline_ms"] = round(observe_ms + gen_ms, 1)
+
             output_event = {
                 "type": "outputs",
                 "original": original.get("text", original) if isinstance(original, dict) else original,
@@ -158,7 +174,7 @@ async def health():
     from pipeline.cache import cache_fingerprint
     return {
         "status": "ok",
-        "version": "bench-metrics-v1",
+        "version": "bench-jlens-v1",
         "cache": cache_fingerprint(),
     }
 

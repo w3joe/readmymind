@@ -16,7 +16,7 @@ function MetricsRow({ metrics, accent = false }) {
       label: "throughput",
       value:
         metrics.tokens_per_sec != null
-          ? `${metrics.tokens_per_sec.toFixed?.(1) ?? metrics.tokens_per_sec} tok/s`
+          ? `${Number(metrics.tokens_per_sec).toFixed(1)} tok/s`
           : "—",
     },
   ]
@@ -46,25 +46,58 @@ export function OutputComparison({ outputs, detection }) {
   const threatDetected = detection?.threat_detected
   const unsteeredMetrics = benchmark?.unsteered
   const steeredMetrics = benchmark?.steered
+  const jlens = benchmark?.jlens
 
   return (
     <div className="space-y-4 animate-fade-up">
-      {threatDetected && benchmark?.delta_ms != null && (
-        <p className="font-mono text-[11px] tabular-nums text-ink-mute">
-          Steering overhead{" "}
-          <span className="text-ink">
-            {benchmark.delta_ms >= 0 ? "+" : "−"}
-            {formatMs(Math.abs(benchmark.delta_ms))}
-          </span>
-          {benchmark.overhead_pct != null && (
-            <span>
-              {" "}
-              ({benchmark.overhead_pct >= 0 ? "+" : ""}
-              {benchmark.overhead_pct}% vs unsteered)
+      <div className="space-y-1 font-mono text-[11px] tabular-nums text-ink-mute">
+        {jlens?.elapsed_ms != null && (
+          <p>
+            J-Lens observe{" "}
+            <span className="text-ink">{formatMs(jlens.elapsed_ms)}</span>
+            {jlens.lens_ms != null && (
+              <span>
+                {" "}
+                (lens {formatMs(jlens.lens_ms)}
+                {jlens.decode_ms != null
+                  ? ` · decode ${formatMs(jlens.decode_ms)}`
+                  : ""}
+                )
+              </span>
+            )}
+            {benchmark.jlens_overhead_pct_vs_gen != null && (
+              <span>
+                {" "}
+                · {benchmark.jlens_overhead_pct_vs_gen}% of generation time
+              </span>
+            )}
+          </p>
+        )}
+        {threatDetected && benchmark?.delta_ms != null && (
+          <p>
+            Steering overhead{" "}
+            <span className="text-ink">
+              {benchmark.delta_ms >= 0 ? "+" : "−"}
+              {formatMs(Math.abs(benchmark.delta_ms))}
             </span>
-          )}
-        </p>
-      )}
+            {benchmark.overhead_pct != null && (
+              <span>
+                {" "}
+                ({benchmark.overhead_pct >= 0 ? "+" : ""}
+                {benchmark.overhead_pct}% vs unsteered)
+              </span>
+            )}
+          </p>
+        )}
+        {benchmark?.pipeline_ms != null && (
+          <p>
+            Pipeline total{" "}
+            <span className="text-ink">{formatMs(benchmark.pipeline_ms)}</span>
+            {" "}
+            (observe + generate)
+          </p>
+        )}
+      </div>
 
       <div
         className={`
