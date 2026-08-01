@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #1a2233;
+  --paper: #eef2f6;
+  --signal: #0f766e;
+  --threat: #c2410c;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: "Outfit", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display,
+h1.brand {
+  font-family: "Instrument Serif", Georgia, serif;
+}
+
+/* Soft optical field — depth without flat fill */
+.atmosphere {
+  background:
+    radial-gradient(ellipse 90% 60% at 12% -10%, rgba(20, 184, 166, 0.14), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 95% 5%, rgba(194, 65, 12, 0.07), transparent 50%),
+    radial-gradient(ellipse 80% 70% at 50% 100%, rgba(61, 74, 92, 0.06), transparent 55%),
+    linear-gradient(180deg, #f4f7fa 0%, #e8eef4 45%, #e4eaf1 100%);
+}
+
+.atmosphere::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(26, 34, 51, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(26, 34, 51, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, black 0%, transparent 70%);
+}
+
+.brand-rule {
+  transform-origin: left;
+  animation: draw-rule 0.6s ease-out forwards;
+}
+
+@keyframes draw-rule {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.layer-row {
+  opacity: 0;
+  animation: fade-up 0.35s ease-out forwards;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.score-fill {
+  transform-origin: left center;
+  animation: bar-grow 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
