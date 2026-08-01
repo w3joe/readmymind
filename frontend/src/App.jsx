@@ -21,11 +21,11 @@ export default function App() {
             Catch &amp; Steer
           </p>
           <h1 className="brand mt-2 font-display text-[3.25rem] leading-[0.95] tracking-tight text-ink sm:text-6xl">
-            J-Lens
+            ReadMyMind
           </h1>
           <div className="brand-rule mt-4 h-[2px] w-28 bg-signal" />
           <p className="mt-4 max-w-md font-sans text-base leading-relaxed text-ink-soft">
-            Watch threat concepts emerge in J-space — then steer the model at the layer they appear.
+            Watch threat concepts form in the residual stream — then steer before the model complies.
           </p>
         </header>
 
