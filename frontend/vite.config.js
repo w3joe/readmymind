@@ -6,6 +6,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/analyse": "http://localhost:8000",
+      "/api/benchmark": "http://localhost:8000",
       "/health": "http://localhost:8000",
     },
   },

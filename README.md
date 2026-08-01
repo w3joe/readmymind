@@ -39,6 +39,9 @@ npm install
 npm run dev
 ```
 
+Open [http://localhost:5173/](http://localhost:5173/) for Catch & Steer, or
+[`/benchmark`](http://localhost:5173/benchmark) for the suite runner.
+
 ### Local backend (cache-only, no GPU)
 
 ```bash
@@ -46,6 +49,27 @@ cd backend
 pip install fastapi uvicorn pydantic
 PYTHONPATH=. python local_app.py
 ```
+
+## Benchmark
+
+Curated suite (50 cases: jailbreak / prompt-injection / safe) scores:
+
+- **Catch** — detection precision / recall / F1
+- **Steer** — attack success rate before vs after steering + refusal rate
+- **Cost** — mean J-Lens observe ms vs generation
+
+**UI:** open `/benchmark`, set alpha / limit, Run suite (SSE via `POST /api/benchmark`).
+
+**CLI:**
+
+```bash
+cd backend
+modal run prep/modal_run_benchmark.py --limit 5
+# full suite: --limit 0
+```
+
+Writes `backend/assets/benchmark_results/latest.json`. Suite definition:
+[`backend/assets/datasets/benchmark_suite.json`](backend/assets/datasets/benchmark_suite.json).
 
 ## Compute steering vectors (Modal GPU)
 
@@ -72,11 +96,14 @@ VITE_BACKEND_URL=https://your-username--jlens-demo-fastapi-app.modal.run
 
 ## SSE event protocol
 
-| `type` | Fields |
-|--------|--------|
-| `layer` | `layer`, `concepts[]`, `threat_score` |
-| `detection` | `threat_detected`, `threat_layer` |
-| `outputs` | `original`, `steered` (null if no threat) |
+| Endpoint | `type` | Fields |
+|----------|--------|--------|
+| `/analyse` | `layer` | `layer`, `concepts[]`, `threat_score` |
+| `/analyse` | `detection` | `threat_detected`, `threat_layer`, `jlens` |
+| `/analyse` | `outputs` | `original`, `steered`, `benchmark` |
+| `/api/benchmark` | `suite_start` | `n`, `alpha` |
+| `/api/benchmark` | `case_result` | `index`, `result` |
+| `/api/benchmark` | `suite_done` | `scorecard` |
 
 ## Known issues
 

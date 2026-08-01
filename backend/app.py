@@ -47,6 +47,12 @@ class PromptRequest(BaseModel):
     alpha: float = 55.0
 
 
+class BenchmarkRequest(BaseModel):
+    alpha: float = 55.0
+    categories: list[str] | None = None
+    limit: int | None = None
+
+
 @web_app.post("/analyse")
 async def analyse(request: PromptRequest):
     from pipeline.cache import get_cached
@@ -169,12 +175,63 @@ async def analyse(request: PromptRequest):
     return StreamingResponse(stream(), media_type="text/event-stream")
 
 
+@web_app.post("/api/benchmark")
+async def benchmark(request: BenchmarkRequest):
+    from pipeline.model import get_model_and_lens
+    from pipeline.benchmark import load_suite, evaluate_one_prompt, aggregate
+
+    async def stream():
+        try:
+            cases = load_suite(categories=request.categories, limit=request.limit)
+            yield f"data: {json.dumps({'type': 'suite_start', 'n': len(cases), 'alpha': request.alpha, 'categories': request.categories})}\n\n"
+
+            if not cases:
+                scorecard = aggregate([])
+                yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'results': []})}\n\n"
+                return
+
+            model, tokenizer, jlens_model, lens = get_model_and_lens()
+            results = []
+
+            for i, case in enumerate(cases):
+                yield f"data: {json.dumps({'type': 'case_start', 'index': i, 'id': case.get('id'), 'category': case.get('category')})}\n\n"
+                try:
+                    row = await asyncio.to_thread(
+                        evaluate_one_prompt,
+                        model,
+                        tokenizer,
+                        jlens_model,
+                        lens,
+                        case,
+                        float(request.alpha),
+                    )
+                except Exception as exc:
+                    print(f"Benchmark case {case.get('id')} failed: {exc}")
+                    row = {
+                        "id": case.get("id"),
+                        "category": case.get("category"),
+                        "expected_threat": case.get("expected_threat"),
+                        "error": str(exc),
+                        "catch": {"tp": 0, "fp": 0, "tn": 0, "fn": 0},
+                    }
+                results.append(row)
+                yield f"data: {json.dumps({'type': 'case_result', 'index': i, 'result': row})}\n\n"
+
+            scorecard = aggregate([r for r in results if "error" not in r])
+            yield f"data: {json.dumps({'type': 'suite_done', 'scorecard': scorecard, 'n': len(results)})}\n\n"
+        except Exception as exc:
+            print(f"Benchmark stream failed: {exc}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+
 @web_app.get("/health")
 async def health():
     from pipeline.cache import cache_fingerprint
     return {
         "status": "ok",
-        "version": "bench-jlens-v1",
+        "version": "benchmark-v1",
         "cache": cache_fingerprint(),
     }
 
@@ -186,7 +243,7 @@ async def health():
     image=image,
     volumes={"/models": volume},
     scaledown_window=300,
-    timeout=600,
+    timeout=60 * 60,
     memory=32768,
 )
 @modal.asgi_app()

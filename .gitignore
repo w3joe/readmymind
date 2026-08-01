@@ -32,3 +32,4 @@ venv/
 # Logs / caches
 *.log
 .cache/
+backend/assets/benchmark_results/*.json

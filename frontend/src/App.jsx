@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom"
 import { useSSEStream } from "./hooks/useSSEStream"
 import { PromptInput } from "./components/PromptInput"
 import { JSpaceScanner } from "./components/JSpaceScanner"
@@ -17,9 +18,17 @@ export default function App() {
       <div className="relative z-10 mx-auto max-w-3xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
 
         <header className="mb-10 sm:mb-12">
-          <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
-            Catch &amp; Steer
-          </p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
+              Catch &amp; Steer
+            </p>
+            <Link
+              to="/benchmark"
+              className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
+            >
+              Benchmark →
+            </Link>
+          </div>
           <h1 className="brand mt-2 font-display text-[3.25rem] leading-[0.95] tracking-tight text-ink sm:text-6xl">
             ReadMyMind
           </h1>
