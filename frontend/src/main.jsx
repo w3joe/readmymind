@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client"
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 import App from "./App"
 import BenchmarkPage from "./pages/BenchmarkPage"
+import BenchmarkResultsPage from "./pages/BenchmarkResultsPage"
 import "./index.css"
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -11,6 +12,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/benchmark" element={<BenchmarkPage />} />
+        <Route path="/benchmark/results" element={<BenchmarkResultsPage />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

@@ -39,8 +39,10 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:5173/](http://localhost:5173/) for Catch & Steer, or
-[`/benchmark`](http://localhost:5173/benchmark) for the suite runner.
+Open [http://localhost:5173/](http://localhost:5173/) for Catch & Steer,
+[`/benchmark`](http://localhost:5173/benchmark) to run the suite, or
+[`/benchmark/results`](http://localhost:5173/benchmark/results) for saved
+scorecards only.
 
 ### Local backend (cache-only, no GPU)
 

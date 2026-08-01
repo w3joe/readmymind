@@ -22,12 +22,20 @@ export default function App() {
             <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
               Catch &amp; Steer
             </p>
-            <Link
-              to="/benchmark"
-              className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
-            >
-              Benchmark →
-            </Link>
+            <div className="flex gap-4">
+              <Link
+                to="/benchmark"
+                className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
+              >
+                Benchmark →
+              </Link>
+              <Link
+                to="/benchmark/results"
+                className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
+              >
+                Results →
+              </Link>
+            </div>
           </div>
           <h1 className="brand mt-2 font-display text-[3.25rem] leading-[0.95] tracking-tight text-ink sm:text-6xl">
             ReadMyMind

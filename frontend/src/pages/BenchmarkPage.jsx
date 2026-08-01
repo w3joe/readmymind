@@ -50,16 +50,24 @@ export default function BenchmarkPage() {
     <div className="atmosphere relative min-h-screen">
       <div className="relative z-10 mx-auto max-w-4xl px-5 pb-16 pt-10 sm:px-8 sm:pt-14">
         <header className="mb-10 sm:mb-12">
-          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="font-sans text-[11px] font-medium uppercase tracking-[0.22em] text-ink-mute">
               Catch · Steer · Cost
             </p>
-            <Link
-              to="/"
-              className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
-            >
-              ← Catch &amp; Steer
-            </Link>
+            <div className="flex gap-4">
+              <Link
+                to="/benchmark/results"
+                className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
+              >
+                Results →
+              </Link>
+              <Link
+                to="/"
+                className="font-sans text-[12px] text-ink-mute underline-offset-4 hover:text-ink hover:underline"
+              >
+                ← Catch &amp; Steer
+              </Link>
+            </div>
           </div>
           <h1 className="brand mt-2 font-display text-[3.25rem] leading-[0.95] tracking-tight text-ink sm:text-6xl">
             Benchmark
